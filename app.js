@@ -19,6 +19,7 @@ const config = require('./src/config');
 const logger = require('./src/utils/logger');
 const { initDatabase } = require('./src/db');
 const apiRoutes = require('./src/routes');
+const { pageRouter: installPageRouter, apiRouter: installApiRouter } = require('./src/routes/install');
 const { reloadSchedules } = require('./src/services/scheduler');
 const { notFoundHandler, errorHandler } = require('./src/middleware/errorHandler');
 
@@ -42,7 +43,7 @@ function mountWebApp(app) {
 
   app.use(express.static(config.webDistDir, { index: 'index.html' }));
   // 非 /api 开头的 GET 请求一律交给前端路由处理
-  app.get(/^\/(?!api\/|healthz).*/, (req, res, next) => {
+  app.get(/^\/(?!api\/|install|healthz).*/, (req, res, next) => {
     const indexFile = require('path').join(config.webDistDir, 'index.html');
     res.sendFile(indexFile, (err) => (err ? next(err) : undefined));
   });
@@ -50,7 +51,12 @@ function mountWebApp(app) {
 }
 
 async function bootstrap() {
-  await initDatabase();
+  // 未安装时不初始化数据库，由网页安装向导完成建表与初始配置
+  if (config.isInstalled()) {
+    await initDatabase();
+  } else {
+    logger.warn('系统尚未安装：请在浏览器访问 /install 完成安装向导');
+  }
 
   const app = express();
   app.set('trust proxy', 1);
@@ -60,6 +66,28 @@ async function bootstrap() {
   app.use(express.json({ limit: '1mb' }));
   app.use(express.urlencoded({ extended: false }));
   app.use(cookieParser());
+
+  // 未安装时引导到网页安装向导：除安装页与健康检查外，全部请求重定向到 /install
+  app.use((req, res, next) => {
+    if (config.isInstalled()) return next();
+    const currentPath = req.path;
+    if (currentPath === '/install' || currentPath.startsWith('/api/install') || currentPath === '/healthz') {
+      return next();
+    }
+    if (currentPath.startsWith('/api')) {
+      return res.status(503).json({
+        success: false,
+        code: 'NOT_INSTALLED',
+        message: '系统尚未安装，请先访问 /install 完成安装',
+      });
+    }
+    return res.redirect('/install');
+  });
+
+  // 安装向导（页面与接口均免登录）
+  app.use('/install', installPageRouter);
+  app.use('/api/install', installApiRouter);
+
   app.use(
     session({
       name: 'heartcron.sid',
@@ -91,8 +119,8 @@ async function bootstrap() {
     logger.info(`数据库文件：${config.dbPath}`);
   });
 
-  // 服务启动后加载全部启用的定时任务
-  await reloadSchedules();
+  // 服务启动后加载全部启用的定时任务（未安装时跳过，安装完成后会自动加载）
+  if (config.isInstalled()) await reloadSchedules();
 }
 
 bootstrap().catch((err) => {

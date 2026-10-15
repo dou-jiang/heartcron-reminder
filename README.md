@@ -31,6 +31,14 @@ HeartCron（心时）是一个 AI 暖心定时提醒 Web 系统，基于开源�
 
 ## 界面预览
 
+安装向导（上传代码后访问 `/install`，自动检测环境并完成初始化）：
+
+| 环境检测 | 完成安装 |
+| --- | --- |
+| ![安装向导-环境检测](docs/screenshots/install-step1.png) | ![安装向导-完成](docs/screenshots/install-done.png) |
+
+管理后台：
+
 | 仪表盘 | 全局配置 |
 | --- | --- |
 | ![仪表盘](docs/screenshots/dashboard.png) | ![全局配置](docs/screenshots/config.png) |
@@ -67,6 +75,7 @@ heartcron-reminder/
 │   ├── routes/
 │   │   ├── index.js           # 路由总入口
 │   │   ├── auth.js            # 登录 / 退出 / 会话
+│   │   ├── install.js         # 网页安装向导接口（免登录，安装后自动关闭）
 │   │   ├── config.js          # 系统配置读写（密钥掩码）
 │   │   ├── task.js            # 定时任务 CRUD
 │   │   ├── anniversary.js     # 纪念日 CRUD
@@ -74,6 +83,7 @@ heartcron-reminder/
 │   │   ├── log.js             # 推送日志分页查询
 │   │   └── push.js            # 一键测试推送 / 仪表盘预览 / 元信息
 │   ├── services/
+│   │   ├── installer.js       # 安装向导：环境检测 / 写 .env / 初始化数据库
 │   │   ├── weather.js         # 和风天气（实时 + 今日预报 + 预警）
 │   │   ├── ai.js              # 大模型调用（OpenAI 兼容）
 │   │   ├── wxpusher.js        # WxPusher 推送
@@ -83,6 +93,8 @@ heartcron-reminder/
 │   │   ├── push.js            # 推送主链路（定时任务与测试推送共用）
 │   │   └── scheduler.js       # node-schedule 任务注册与重载
 │   └── utils/                 # 日志、HTTP、掩码、日期、asyncHandler 等工具
+├── public/
+│   └── install.html           # 网页安装向导页面（单文件，无需构建即可访问）
 ├── frontend/                  # Vue3 管理后台
 │   ├── vite.config.js         # 开发代理 /api → http://localhost:8080
 │   ├── index.html
@@ -113,13 +125,17 @@ npm install
 
 > Node.js >= 16。项目使用 `sqlite3` v6（提供 Node 20+ 的预编译二进制），在较旧的 Node 版本上安装时可能需要本地编译工具链，建议直接使用 Node 20 及以上版本。
 
-### 2. 配置环境变量
+### 2. 配置环境变量（两种方式二选一）
+
+方式 A（推荐）：启动服务后用浏览器打开 `/install` 网页安装向导，按提示填写账号密码与各项密钥，向导会自动生成 `.env` 并初始化数据库。
+
+方式 B：手动复制并编辑 `.env`：
 
 ```bash
 cp .env.example .env    # Windows: copy .env.example .env
 ```
 
-编辑 `.env`，至少修改登录账号密码：
+`.env` 支持的变量：
 
 | 变量 | 说明 | 默认值 |
 | --- | --- | --- |
@@ -132,7 +148,7 @@ cp .env.example .env    # Windows: copy .env.example .env
 | `TZ` | 定时任务时区 | Asia/Shanghai |
 | `HTTP_TIMEOUT` | 外部请求超时（毫秒） | 10000 |
 
-### 3. 初始化数据库
+### 3. 初始化数据库（网页向导会自动完成，手动部署时执行）
 
 ```bash
 npm run init-db
@@ -169,7 +185,103 @@ pm2 save
 pm2 logs heartcron
 ```
 
-### 6. 在后台完成配置
+### 6. 打开安装向导 / 登录后台
+
+1. 打开 `http://服务器地址:8080`，未安装时会自动跳转到安装向导 `/install`
+2. 按向导完成「环境检测 → 站点与账号 → 推送与 AI 配置 → 完成安装」
+3. 使用向导中设置的账号密码登录后台
+4. 进入「全局配置」补充 WxPusher、和风天气与大模型参数（向导中已填写的会保留）
+5. 点击「一键测试推送」验证链路，然后到「定时任务」「纪念日」「待办事项」配置内容
+
+## 服务器部署（上传即用）
+
+部署到自己的服务器只需要：**上传代码 → 安装依赖 → 启动服务 → 浏览器打开安装向导**，不需要手工建库、改配置文件。
+
+```bash
+# 1. 上传代码到服务器（git clone 或直接上传压缩包后解压）
+cd /www/wwwroot/heartcron-reminder
+
+# 2. 安装后端依赖（生产环境可加 --omit=dev）
+npm install --omit=dev
+
+# 3. 构建前端（本地构建后上传 frontend/dist 也可以）
+npm run build
+
+# 4. 用 PM2 常驻启动
+npm install -g pm2
+pm2 start app.js --name heartcron
+pm2 save && pm2 startup
+
+# 5. 浏览器打开安装向导
+#    http://服务器IP:8080/install
+```
+
+### 安装向导做了什么
+
+未安装时访问任意地址都会自动跳转到 `/install`，接口返回 `503 NOT_INSTALLED`；安装完成后向导会自动关闭（再次访问只显示「系统已安装」）。
+
+| 步骤 | 说明 |
+| --- | --- |
+| ① 环境检测 | Node 版本、后端依赖模块、SQLite 扩展可用性、数据目录写权限、前端构建产物、外网连通性、时区 |
+| ② 站点与账号 | 服务端口、时区、数据库文件路径、管理员账号密码、SESSION_SECRET |
+| ③ 推送与 AI 配置 | WxPusher、和风天气、大模型参数与昵称（可跳过，后台再填） |
+| ④ 完成安装 | 写入 `.env`、建表、写入配置与示例数据、生成 `data/install.lock`、注册定时任务 |
+
+向导执行过程中会备份原有 `.env` 为 `.env.bak`；配置写入后会**热加载生效，无需重启进程**。
+
+> 本项目是 Node.js + SQLite 架构，**不需要填写数据库主机、账号、密码**（SQLite 是单文件数据库，向导里只需要选一个数据库文件路径）。若需要 MySQL 版本，需要另行改造数据访问层。
+
+### 重新安装
+
+删除项目目录下的 `data/install.lock`，刷新 `/install` 页面即可重新运行向导（重新安装会覆盖 `.env` 与数据库中的系统配置，业务数据表不受影响）。
+
+### 宝塔面板部署
+
+1. 在「软件商店」安装 **Node.js 版本管理器**（Node 20 或更高）与 **PM2 管理器**
+2. 把项目上传到 `/www/wwwroot/heartcron-reminder`，或直接用 Git 拉取
+3. 终端进入项目目录执行 `npm install --omit=dev && npm run build`
+4. 在「PM2 管理器」中添加项目：启动文件选 `app.js`，运行目录选项目根目录，端口填 8080
+5. 在「网站 → 添加站点」里把域名反向代理到 `http://127.0.0.1:8080`，并在「安全」中放行端口
+6. 浏览器访问 `http://你的域名/install` 完成安装向导
+
+### Nginx 反向代理示例
+
+```nginx
+server {
+    listen 80;
+    server_name heartcron.example.com;
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+### PM2 常用命令
+
+```bash
+pm2 start app.js --name heartcron   # 启动
+pm2 restart heartcron               # 重启（修改 .env 后需要重启）
+pm2 logs heartcron                  # 查看日志
+pm2 status                          # 查看状态
+pm2 delete heartcron                # 删除进程
+```
+
+### 部署注意事项
+
+- 服务器需要能访问外网：`wxpusher.zjiecode.com`、`devapi.qweather.com`、你配置的大模型接口地址
+- 记得在云服务器安全组 / 防火墙放行服务端口（默认 8080）
+- 前端构建产物 `frontend/dist` 未上传时，只能访问接口与安装向导，请在服务器执行 `npm run build`
+- 未配置 HTTPS 时，登录 Cookie 不带 Secure 标记；对外网开放建议用 Nginx 配置 HTTPS
+
+## 手动安装（不用向导时）
+
+如果已经按「快速开始」的步骤 1~5 手动配置好 `.env` 并执行过 `npm run init-db`，就不需要走安装向导，直接登录后台即可：
 
 1. 打开 `http://服务器地址:8080`，使用 `.env` 中的账号密码登录
 2. 进入「全局配置」填写 WxPusher AppToken / UID、和风天气 Key / 城市 ID、大模型接口地址与 Key
@@ -207,6 +319,15 @@ pm2 logs heartcron
 | GET | `/api/preview` | 仪表盘今日预览（不推送） |
 | GET | `/api/meta` | 前端下拉选项、时区、已注册任务数 |
 | GET | `/healthz` | 健康检查 |
+
+安装向导相关接口（免登录，仅未安装时可调用）：
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/install` | 安装向导页面 |
+| GET | `/api/install/status` | 安装状态与环境检测结果 |
+| POST | `/api/install/check` | 重新执行环境检测 |
+| POST | `/api/install/run` | 执行安装（写 .env、建表、写入初始配置） |
 
 ## 推送流程
 
@@ -265,6 +386,12 @@ pm2 logs heartcron
 **AI 文案像是模板**：说明大模型调用失败并走了内置备用文案，可在推送日志的「错误信息」中查看具体原因（常见为 API Key 无效、模型名称不存在、余额不足）。
 
 **修改任务后什么时候生效**：任务增删改与启停都会立即重新加载全部调度，无需重启服务。
+
+**访问 /install 显示「系统已安装」**：说明 `data/install.lock` 已存在，属于正常的防重复安装保护；需要重新安装时删除该文件再刷新页面。
+
+**安装向导里需要填数据库地址吗**：不需要。项目使用 SQLite 单文件数据库，向导里只选择数据库文件路径（默认 `data/heartcron.db`），没有主机、账号、密码这些概念。
+
+**安装后改了端口没生效**：端口在进程启动时监听，改完 `.env` 需要重启服务（`pm2 restart heartcron`）；其余配置（密钥、Prompt、任务）都是即时生效的。
 
 ## License
 

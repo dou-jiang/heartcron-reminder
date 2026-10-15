@@ -79,6 +79,28 @@ function exec(sql) {
 }
 
 /**
+ * 关闭当前数据库连接（安装向导切换数据库路径时使用）
+ * @returns {Promise<void>}
+ */
+function closeDb() {
+  return new Promise((resolve) => {
+    if (!db) return resolve();
+    const instance = db;
+    db = null;
+    instance.close(() => resolve());
+  });
+}
+
+/**
+ * 重置数据库连接（关闭旧连接并按最新配置重新建立）
+ * @returns {Promise<sqlite3.Database>}
+ */
+async function resetDbConnection() {
+  await closeDb();
+  return getDb();
+}
+
+/**
  * 初始化数据库：建表 + 预置单行系统配置（含默认 Prompt 模板）
  * 幂等：重复执行不会覆盖已有数据
  * @returns {Promise<void>}
@@ -132,4 +154,4 @@ async function getConfigRow() {
   };
 }
 
-module.exports = { getDb, run, get, all, exec, initDatabase, getConfigRow };
+module.exports = { getDb, run, get, all, exec, initDatabase, getConfigRow, closeDb, resetDbConnection };

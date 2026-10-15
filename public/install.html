@@ -1,0 +1,523 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HeartCron 心时 · 安装向导</title>
+    <style>
+      :root {
+        --primary: #ff6b8a;
+        --primary-dark: #e04f6f;
+        --text: #303133;
+        --muted: #909399;
+        --border: #ebeef5;
+        --ok: #67c23a;
+        --warn: #e6a23c;
+        --err: #f56c6c;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: linear-gradient(135deg, #ffe8ee 0%, #f5f7fb 55%, #e8f0ff 100%);
+        color: var(--text);
+        font-family: 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif;
+        font-size: 14px;
+      }
+      .wrap { max-width: 880px; margin: 0 auto; padding: 32px 20px 60px; }
+      .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+      .brand__heart { color: var(--primary); font-size: 30px; line-height: 1; }
+      .brand h1 { font-size: 24px; margin: 0; }
+      .slogan { color: var(--muted); margin: 0 0 22px 42px; font-size: 13px; }
+      .card {
+        background: #fff;
+        border-radius: 14px;
+        box-shadow: 0 10px 34px rgba(0, 0, 0, 0.07);
+        padding: 22px 24px;
+      }
+      .steps { display: flex; gap: 8px; margin-bottom: 18px; flex-wrap: wrap; }
+      .steps__item {
+        flex: 1;
+        min-width: 150px;
+        padding: 10px 12px;
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.72);
+        border: 1px solid var(--border);
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .steps__item.active { border-color: var(--primary); color: var(--primary-dark); background: #fff; font-weight: 600; }
+      .steps__item.done { color: var(--ok); border-color: #d6f0c2; background: #f6fff0; }
+      h2 { font-size: 17px; margin: 0 0 4px; }
+      .hint { color: var(--muted); font-size: 13px; margin: 0 0 16px; line-height: 1.7; }
+      .check {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 11px 12px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        margin-bottom: 8px;
+      }
+      .check__icon { width: 20px; height: 20px; border-radius: 50%; color: #fff; text-align: center; line-height: 20px; font-size: 12px; flex: none; }
+      .check--ok .check__icon { background: var(--ok); }
+      .check--warn .check__icon { background: var(--warn); }
+      .check--err .check__icon { background: var(--err); }
+      .check__body { flex: 1; }
+      .check__name { font-weight: 600; }
+      .check__meta { color: var(--muted); font-size: 12px; margin-top: 3px; word-break: break-all; line-height: 1.6; }
+      .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 18px; }
+      .field { display: flex; flex-direction: column; gap: 6px; }
+      .field--full { grid-column: 1 / -1; }
+      label { font-size: 13px; color: #606266; }
+      label .req { color: var(--err); }
+      input[type='text'], input[type='password'], input[type='number'], select {
+        height: 38px;
+        padding: 0 11px;
+        border: 1px solid #dcdfe6;
+        border-radius: 8px;
+        font-size: 14px;
+        outline: none;
+        background: #fff;
+        color: var(--text);
+        width: 100%;
+      }
+      input:focus, select:focus { border-color: var(--primary); }
+      .tip { color: var(--muted); font-size: 12px; line-height: 1.6; }
+      .actions { display: flex; justify-content: space-between; gap: 10px; margin-top: 22px; }
+      button {
+        height: 40px;
+        padding: 0 20px;
+        border-radius: 8px;
+        border: 1px solid #dcdfe6;
+        background: #fff;
+        color: var(--text);
+        font-size: 14px;
+        cursor: pointer;
+      }
+      button.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+      button.primary:hover { background: var(--primary-dark); border-color: var(--primary-dark); }
+      button:disabled { opacity: 0.55; cursor: not-allowed; }
+      .group-title { font-weight: 600; margin: 20px 0 12px; padding-left: 9px; border-left: 3px solid var(--primary); }
+      .alert { padding: 11px 14px; border-radius: 8px; margin-bottom: 14px; font-size: 13px; line-height: 1.7; display: none; }
+      .alert--err { background: #fef0f0; color: #c45656; }
+      .alert--ok { background: #f0f9eb; color: #529b2e; }
+      .alert--info { background: #f4f4f5; color: #606266; }
+      .step-list { list-style: none; padding: 0; margin: 0 0 8px; }
+      .step-list li { padding: 9px 0; border-bottom: 1px dashed var(--border); display: flex; gap: 8px; align-items: flex-start; }
+      .step-list li:last-child { border-bottom: none; }
+      .dot { width: 18px; height: 18px; border-radius: 50%; color: #fff; text-align: center; line-height: 18px; font-size: 11px; flex: none; }
+      .dot--ok { background: var(--ok); }
+      .dot--err { background: var(--err); }
+      .switch { display: flex; align-items: center; gap: 8px; }
+      .hidden { display: none !important; }
+      .footer { text-align: center; color: var(--muted); font-size: 12px; margin-top: 18px; line-height: 1.8; }
+      code { background: #f5f7fa; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+      @media (max-width: 640px) {
+        .grid { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="brand">
+        <span class="brand__heart">♥</span>
+        <h1>HeartCron 心时 · 安装向导</h1>
+      </div>
+      <p class="slogan">Cron调度时间，心意准时抵达。</p>
+
+      <div class="steps">
+        <div class="steps__item" data-step="1">① 环境检测</div>
+        <div class="steps__item" data-step="2">② 站点与账号</div>
+        <div class="steps__item" data-step="3">③ 推送与 AI 配置</div>
+        <div class="steps__item" data-step="4">④ 完成安装</div>
+      </div>
+
+      <div class="card">
+        <div id="alert" class="alert"></div>
+
+        <section id="panel-installed" class="hidden">
+          <h2>系统已安装</h2>
+          <p class="hint" id="installed-desc"></p>
+          <p class="tip">
+            如需重新安装，请删除项目目录下的 <code>data/install.lock</code> 后刷新本页面。
+            删除锁文件不会删除已有数据，重新安装时会覆盖 <code>.env</code> 与数据库配置。
+          </p>
+          <div class="actions">
+            <span></span>
+            <button class="primary" onclick="window.location.href='/'">进入管理后台</button>
+          </div>
+        </section>
+
+        <section id="panel-1" class="hidden">
+          <h2>运行环境检测</h2>
+          <p class="hint">
+            本项目为 Node.js + Express + SQLite 架构，不需要填写数据库账号密码（SQLite 是文件数据库）。
+            检测项等价于 PHP 项目的「扩展检测」：Node 版本、依赖模块、SQLite 扩展、目录权限与网络连通性。
+          </p>
+          <div id="checks"></div>
+          <div class="actions">
+            <button id="btn-recheck">重新检测</button>
+            <button class="primary" id="btn-to-2">下一步</button>
+          </div>
+        </section>
+
+        <section id="panel-2" class="hidden">
+          <h2>站点与管理员账号</h2>
+          <p class="hint">账号密码只写入服务器上的 <code>.env</code> 文件，不存入数据库，请务必修改默认值。</p>
+          <div class="grid">
+            <div class="field">
+              <label>服务端口 <span class="req">*</span></label>
+              <input type="number" id="port" min="1" max="65535" />
+              <span class="tip">默认 8080，若被占用可改为 8081 等；修改后需要重启服务生效</span>
+            </div>
+            <div class="field">
+              <label>时区 <span class="req">*</span></label>
+              <input type="text" id="timezone" />
+              <span class="tip">定时任务按此时区执行，例如 Asia/Shanghai</span>
+            </div>
+            <div class="field field--full">
+              <label>数据库文件路径 <span class="req">*</span></label>
+              <input type="text" id="dbPath" />
+              <span class="tip">相对项目根目录，默认 data/heartcron.db，不存在会自动创建</span>
+            </div>
+            <div class="field">
+              <label>管理员账号 <span class="req">*</span></label>
+              <input type="text" id="adminUsername" autocomplete="off" />
+            </div>
+            <div class="field">
+              <label>管理员密码 <span class="req">*</span></label>
+              <input type="password" id="adminPassword" autocomplete="new-password" />
+              <span class="tip">至少 8 位，建议字母 + 数字 + 符号</span>
+            </div>
+            <div class="field">
+              <label>确认密码 <span class="req">*</span></label>
+              <input type="password" id="adminPasswordConfirm" autocomplete="new-password" />
+            </div>
+            <div class="field">
+              <label>SESSION_SECRET（可选）</label>
+              <input type="text" id="sessionSecret" placeholder="留空自动生成随机密钥" />
+            </div>
+          </div>
+          <div class="actions">
+            <button id="btn-back-1">上一步</button>
+            <button class="primary" id="btn-to-3">下一步</button>
+          </div>
+        </section>
+
+        <section id="panel-3" class="hidden">
+          <h2>推送与 AI 配置（可跳过）</h2>
+          <p class="hint">
+            这些配置也可以先留空，安装完成后登录后台在「全局配置」页面填写。填写后即可直接使用「一键测试推送」验证。
+          </p>
+
+          <div class="group-title">WxPusher 微信推送</div>
+          <div class="grid">
+            <div class="field">
+              <label>AppToken</label>
+              <input type="text" id="wxPusherAppToken" autocomplete="off" />
+            </div>
+            <div class="field">
+              <label>接收 UID</label>
+              <input type="text" id="wxPusherUid" autocomplete="off" />
+              <span class="tip">多个 UID 用英文逗号分隔</span>
+            </div>
+            <div class="field field--full">
+              <label>消息标题模板</label>
+              <input type="text" id="wxPusherTitle" />
+            </div>
+          </div>
+
+          <div class="group-title">和风天气</div>
+          <div class="grid">
+            <div class="field">
+              <label>API Key</label>
+              <input type="text" id="qweatherKey" autocomplete="off" />
+            </div>
+            <div class="field">
+              <label>城市 ID</label>
+              <input type="text" id="qweatherCityId" autocomplete="off" placeholder="例如 101230101" />
+            </div>
+          </div>
+
+          <div class="group-title">AI 大模型（OpenAI 兼容格式）</div>
+          <div class="grid">
+            <div class="field">
+              <label>接口地址</label>
+              <input type="text" id="aiApiUrl" placeholder="https://api.openai.com/v1" />
+            </div>
+            <div class="field">
+              <label>API Key</label>
+              <input type="text" id="aiApiKey" autocomplete="off" placeholder="sk-..." />
+            </div>
+            <div class="field">
+              <label>模型名称</label>
+              <input type="text" id="aiModel" placeholder="gpt-4o-mini" />
+            </div>
+          </div>
+
+          <div class="group-title">基础信息</div>
+          <div class="grid">
+            <div class="field">
+              <label>你的昵称（boy_name 变量）</label>
+              <input type="text" id="boyName" />
+            </div>
+            <div class="field">
+              <label>她的昵称（girl_name 变量）</label>
+              <input type="text" id="girlName" />
+            </div>
+            <div class="field">
+              <label>默认文案风格</label>
+              <select id="defaultStyle"></select>
+            </div>
+            <div class="field">
+              <label>示例数据</label>
+              <div class="switch">
+                <input type="checkbox" id="demoData" checked />
+                <span class="tip">写入 3 个定时任务、2 条待办、1 个纪念日示例</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button id="btn-back-2">上一步</button>
+            <button class="primary" id="btn-install">开始安装</button>
+          </div>
+        </section>
+
+        <section id="panel-4" class="hidden">
+          <h2 id="result-title">正在安装…</h2>
+          <p class="hint" id="result-hint">正在写入配置并初始化数据库，请勿关闭页面。</p>
+          <ul class="step-list" id="step-list"></ul>
+          <div class="actions">
+            <span></span>
+            <button class="primary hidden" id="btn-enter">进入管理后台</button>
+          </div>
+        </section>
+      </div>
+
+      <p class="footer">
+        HeartCron 心时 · 安装向导<br />
+        安装完成后建议使用 PM2 托管进程：<code>pm2 start app.js --name heartcron</code>
+      </p>
+    </div>
+
+    <script>
+      var state = { checks: [], defaults: {}, canNext: false };
+
+      function byId(id) { return document.getElementById(id); }
+
+      function showAlert(message, type) {
+        var box = byId('alert');
+        box.className = 'alert alert--' + (type || 'info');
+        box.textContent = message;
+        box.style.display = message ? 'block' : 'none';
+      }
+
+      function request(path, options) {
+        var opts = options || {};
+        return fetch('/api/install' + path, {
+          method: opts.method || 'GET',
+          headers: { 'Content-Type': 'application/json' },
+          body: opts.body ? JSON.stringify(opts.body) : undefined,
+        }).then(function (res) {
+          return res.json().catch(function () { return {}; }).then(function (data) {
+            if (!res.ok || data.success === false) {
+              throw new Error(data.message || ('请求失败（HTTP ' + res.status + '）'));
+            }
+            return data.data;
+          });
+        });
+      }
+
+      function showStep(step) {
+        [1, 2, 3, 4].forEach(function (index) {
+          var panel = byId('panel-' + index);
+          if (panel) panel.className = index === step ? '' : 'hidden';
+          var item = document.querySelector('.steps__item[data-step="' + index + '"]');
+          if (item) item.className = 'steps__item' + (index === step ? ' active' : index < step ? ' done' : '');
+        });
+      }
+
+      function renderChecks(checks) {
+        var container = byId('checks');
+        container.innerHTML = '';
+        var blocking = 0;
+        checks.forEach(function (check) {
+          var level = check.ok ? 'ok' : check.level === 'error' ? 'err' : 'warn';
+          if (!check.ok && check.level === 'error') blocking += 1;
+          var row = document.createElement('div');
+          row.className = 'check check--' + level;
+          var meta = '当前：' + check.current + ' ｜ 要求：' + check.required;
+          if (!check.ok && check.hint) meta += ' ｜ 建议：' + check.hint;
+          row.innerHTML =
+            '<div class="check__icon">' + (check.ok ? '✓' : '!') + '</div>' +
+            '<div class="check__body">' +
+            '<div class="check__name">' + check.name + '</div>' +
+            '<div class="check__meta">' + meta + '</div>' +
+            '</div>';
+          container.appendChild(row);
+        });
+        state.canNext = blocking === 0;
+        byId('btn-to-2').disabled = !state.canNext;
+        if (blocking > 0) {
+          showAlert('有 ' + blocking + ' 项必需环境未通过，请按提示处理后点击「重新检测」。', 'err');
+        } else {
+          showAlert('环境检测通过，可以继续安装。', 'ok');
+        }
+      }
+
+      function fillForm(defaults) {
+        byId('port').value = defaults.port || 8080;
+        byId('timezone').value = defaults.timezone || 'Asia/Shanghai';
+        byId('dbPath').value = defaults.dbPath || 'data/heartcron.db';
+        byId('adminUsername').value = 'admin';
+        byId('boyName').value = defaults.boyName || '我';
+        byId('girlName').value = defaults.girlName || '宝贝';
+        byId('wxPusherTitle').value = defaults.pushTitle || 'HeartCron 心时 · 今日份关心';
+        var select = byId('defaultStyle');
+        select.innerHTML = '';
+        (defaults.styleTypes || ['温柔治愈']).forEach(function (item) {
+          var option = document.createElement('option');
+          option.value = item;
+          option.textContent = item;
+          if (item === defaults.defaultStyle) option.selected = true;
+          select.appendChild(option);
+        });
+      }
+
+      function collectPayload() {
+        return {
+          port: Number(byId('port').value || 8080),
+          timezone: byId('timezone').value.trim(),
+          dbPath: byId('dbPath').value.trim(),
+          adminUsername: byId('adminUsername').value.trim(),
+          adminPassword: byId('adminPassword').value,
+          adminPasswordConfirm: byId('adminPasswordConfirm').value,
+          sessionSecret: byId('sessionSecret').value.trim(),
+          wxPusherAppToken: byId('wxPusherAppToken').value.trim(),
+          wxPusherUid: byId('wxPusherUid').value.trim(),
+          wxPusherTitle: byId('wxPusherTitle').value.trim(),
+          qweatherKey: byId('qweatherKey').value.trim(),
+          qweatherCityId: byId('qweatherCityId').value.trim(),
+          aiApiUrl: byId('aiApiUrl').value.trim(),
+          aiApiKey: byId('aiApiKey').value.trim(),
+          aiModel: byId('aiModel').value.trim(),
+          boyName: byId('boyName').value.trim(),
+          girlName: byId('girlName').value.trim(),
+          defaultStyle: byId('defaultStyle').value,
+          demoData: byId('demoData').checked,
+        };
+      }
+
+      function validateStep2() {
+        var payload = collectPayload();
+        if (!payload.adminUsername || payload.adminUsername.length < 3) return '管理员账号至少 3 个字符';
+        if (!payload.adminPassword || payload.adminPassword.length < 8) return '管理员密码至少 8 位';
+        if (payload.adminPassword !== payload.adminPasswordConfirm) return '两次输入的密码不一致';
+        if (!payload.port || payload.port < 1 || payload.port > 65535) return '服务端口需为 1~65535 之间的整数';
+        if (!payload.timezone) return '请填写时区，例如 Asia/Shanghai';
+        if (!payload.dbPath || payload.dbPath.indexOf('.db') < 0) return '数据库文件路径需以 .db 结尾';
+        return '';
+      }
+
+      function renderSteps(steps) {
+        var list = byId('step-list');
+        list.innerHTML = '';
+        steps.forEach(function (step) {
+          var item = document.createElement('li');
+          item.innerHTML =
+            '<span class="dot dot--' + (step.ok ? 'ok' : 'err') + '">' + (step.ok ? '✓' : '!') + '</span>' +
+            '<span><b>' + step.name + '</b><br /><span class="tip">' + (step.message || '') + '</span></span>';
+          list.appendChild(item);
+        });
+      }
+
+      function loadStatus() {
+        request('/status')
+          .then(function (data) {
+            if (data.installed) {
+              byId('panel-installed').className = '';
+              byId('installed-desc').textContent =
+                '安装时间：' + (data.installedAt || '未知') + '。系统已经完成初始化，无需重复安装。';
+              return;
+            }
+            state.defaults = data.defaults || {};
+            fillForm(state.defaults);
+            state.checks = data.checks || [];
+            renderChecks(state.checks);
+            showStep(1);
+          })
+          .catch(function (err) {
+            showAlert('获取安装状态失败：' + err.message, 'err');
+          });
+      }
+
+      function recheck() {
+        var button = byId('btn-recheck');
+        button.disabled = true;
+        button.textContent = '检测中…';
+        request('/check', { method: 'POST', body: {} })
+          .then(function (data) {
+            state.checks = data.checks || [];
+            renderChecks(state.checks);
+          })
+          .catch(function (err) {
+            showAlert('检测失败：' + err.message, 'err');
+          })
+          .then(function () {
+            button.disabled = false;
+            button.textContent = '重新检测';
+          });
+      }
+
+      function runInstall() {
+        var error = validateStep2();
+        if (error) {
+          showAlert(error, 'err');
+          return;
+        }
+        showAlert('', 'info');
+        showStep(4);
+        byId('result-title').textContent = '正在安装…';
+        byId('result-hint').textContent = '正在写入配置并初始化数据库，请勿关闭页面。';
+        byId('btn-install').disabled = true;
+
+        request('/run', { method: 'POST', body: collectPayload() })
+          .then(function (data) {
+            renderSteps(data.steps || []);
+            var failed = (data.steps || []).filter(function (step) { return !step.ok; });
+            byId('result-title').textContent = '安装完成';
+            byId('result-hint').textContent = failed.length
+              ? '安装已完成，但存在需要手动处理的提示项（见上方标记）。'
+              : '配置已生效，无需重启即可使用。建议使用 PM2 托管进程，保证开机自启与异常自动重启。';
+            byId('btn-enter').className = 'primary';
+            showAlert('安装成功，可以登录后台配置定时任务与推送参数了。', 'ok');
+          })
+          .catch(function (err) {
+            byId('result-title').textContent = '安装失败';
+            byId('result-hint').textContent = '请根据下方错误信息修正后重试。';
+            renderSteps([{ name: '安装中止', ok: false, message: err.message }]);
+            showAlert('安装失败：' + err.message, 'err');
+            byId('btn-install').disabled = false;
+          });
+      }
+
+      byId('btn-recheck').addEventListener('click', recheck);
+      byId('btn-to-2').addEventListener('click', function () { showAlert('', 'info'); showStep(2); });
+      byId('btn-back-1').addEventListener('click', function () { showStep(1); });
+      byId('btn-to-3').addEventListener('click', function () {
+        var error = validateStep2();
+        if (error) { showAlert(error, 'err'); return; }
+        showAlert('', 'info');
+        showStep(3);
+      });
+      byId('btn-back-2').addEventListener('click', function () { showStep(2); });
+      byId('btn-install').addEventListener('click', runInstall);
+      byId('btn-enter').addEventListener('click', function () { window.location.href = '/'; });
+
+      loadStatus();
+    </script>
+  </body>
+</html>
+
