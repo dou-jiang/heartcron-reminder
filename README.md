@@ -29,6 +29,20 @@ HeartCron（心时）是一个 AI 暖心定时提醒 Web 系统，基于开源�
 | 定时任务 | node-schedule + cron-parser |
 | 第三方服务 | 和风天气、兼容 OpenAI 格式的大模型 API、WxPusher |
 
+## 界面预览
+
+| 仪表盘 | 全局配置 |
+| --- | --- |
+| ![仪表盘](docs/screenshots/dashboard.png) | ![全局配置](docs/screenshots/config.png) |
+
+| 定时任务 | cron 可视化选择 |
+| --- | --- |
+| ![定时任务](docs/screenshots/task.png) | ![cron 可视化](docs/screenshots/task-cron.png) |
+
+| 推送日志 | |
+| --- | --- |
+| ![推送日志](docs/screenshots/log.png) | |
+
 ## 目录结构
 
 ```
