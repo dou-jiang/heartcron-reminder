@@ -6,9 +6,42 @@
 
 [![GitHub](https://img.shields.io/badge/GitHub-dou--jiang%2Fheartcron--reminder-181717?logo=github)](https://github.com/dou-jiang/heartcron-reminder)
 
-项目地址：https://github.com/dou-jiang/heartcron-reminder
+[项目主页](https://github.com/dou-jiang/heartcron-reminder) · [下载 PHP 上传包](https://github.com/dou-jiang/heartcron-reminder/releases/latest) · [问题反馈 / 功能建议](https://github.com/dou-jiang/heartcron-reminder/issues)
 
 > 还没有女朋友？也可以先用它照顾好自己，提醒吃饭、带伞、早点休息。等喜欢的人出现，把这份细心送给对方。希望 HeartCron 能助你一臂之力，早日脱单 ❤
+
+## 界面演示
+
+以下为 PHP 版后台截图，使用演示数据与本地模拟接口展示功能，不代表真实微信投递或第三方 AI 服务的连接结果。
+
+**仪表盘：今日预览、调度连接状态与最近推送记录**
+
+![HeartCron 仪表盘与自动推送](docs/screenshots/dashboard.png)
+
+**定时任务：每条任务独立设置文案、提醒时间与接收人**
+
+![HeartCron 定时任务](docs/screenshots/task.png)
+
+<details>
+<summary>展开更多演示：独立任务文案、固定模板、AI 测试与推送日志</summary>
+
+**编辑任务与自定义推送内容**
+
+![独立任务文案与 Cron 设置](docs/screenshots/task-content.png)
+
+**全局默认模板与一键套用示例**
+
+![元气、工资、生日和纪念日模板](docs/screenshots/config-template.png)
+
+**AI 连接测试：生成内容、耗时与返回状态**
+
+![AI 测试结果](docs/screenshots/ai-test.png)
+
+**推送日志：执行状态、内容与详情**
+
+![HeartCron 推送日志](docs/screenshots/log.png)
+
+</details>
 
 ## 宝塔部署：创建 PHP 站点，上传安装
 
@@ -213,6 +246,10 @@ PHP API 地址使用 `api.php?route=...`，例如 `route=session`、`route=confi
 **天气或 AI 失败？** AI 可先点「测试 AI」查看具体原因，检查接口地址、Key、模型与服务器出站网络或 cURL 证书。天气失败不阻断推送；正式推送时 AI 失败会使用备用文案，原因显示在日志中。固定模板中的未配置变量显示为 —。
 
 **怎样给每个任务设置不同内容？** 在「定时任务 → 编辑」选择「自定义内容」填写本任务文案，也可选择 AI 生成并单独填写提示词。只有「跟随全局」的任务使用全局内容；修改全局模板不会覆盖独立任务文案。
+
+## 社区交流与反馈
+
+[LINUX DO](https://linux.do/) 是一个技术交流社区。本项目认可社区「真诚、友善、团结、专业」的理念，欢迎佬友交流使用体验；问题反馈和功能建议也可提交到 [GitHub Issues](https://github.com/dou-jiang/heartcron-reminder/issues)。
 
 ## 本地开发与验证
 
