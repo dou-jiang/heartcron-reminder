@@ -1,0 +1,80 @@
+/* 全局样式：HeartCron 心时 管理后台 */
+:root {
+  --hc-primary: #ff6b8a;
+  --hc-primary-dark: #e04f6f;
+  --hc-bg: #f5f7fb;
+  --hc-card-radius: 12px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif;
+  background: var(--hc-bg);
+  color: #303133;
+}
+
+.hc-page {
+  padding: 16px;
+}
+
+.hc-card {
+  border-radius: var(--hc-card-radius);
+}
+
+.hc-card + .hc-card {
+  margin-top: 16px;
+}
+
+.hc-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.hc-toolbar__title {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.hc-toolbar__desc {
+  margin-top: 4px;
+  font-size: 13px;
+  color: #909399;
+}
+
+.hc-muted {
+  color: #909399;
+  font-size: 13px;
+}
+
+.hc-ellipsis {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+.hc-mono {
+  font-family: 'JetBrains Mono', Consolas, Monaco, monospace;
+}
+
+.hc-pagination {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+}

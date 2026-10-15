@@ -1,0 +1,38 @@
+{
+  "name": "heartcron-reminder",
+  "version": "1.0.0",
+  "private": true,
+  "description": "HeartCron 心时 —— AI 暖心定时提醒 Web 系统（天气 / 纪念日 / 待办 + 大模型文案 + WxPusher 推送）",
+  "main": "app.js",
+  "engines": {
+    "node": ">=16"
+  },
+  "scripts": {
+    "start": "node app.js",
+    "dev": "node app.js",
+    "init-db": "node scripts/init-db.js",
+    "web:install": "npm --prefix frontend install",
+    "web:build": "npm --prefix frontend run build",
+    "build": "npm --prefix frontend install && npm --prefix frontend run build"
+  },
+  "keywords": [
+    "heartcron",
+    "reminder",
+    "cron",
+    "wxpusher",
+    "qweather",
+    "ai"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.7.7",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "cron-parser": "^4.9.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.1",
+    "express-session": "^1.18.1",
+    "node-schedule": "^2.1.1",
+    "sqlite3": "^6.0.1"
+  }
+}
