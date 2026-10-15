@@ -25,17 +25,21 @@ HeartCron（心时）是一个 AI 暖心定时提醒 Web 系统，基于开源�
 | --- | --- |
 | 后端 | Node.js + Express |
 | 前端 | Vue3 + Vite + Element Plus + vue-router + axios |
-| 数据库 | SQLite（sqlite3） |
+| 数据库 | MySQL 5.7+ / 8.0 / MariaDB 10.4+（mysql2 连接池） |
 | 定时任务 | node-schedule + cron-parser |
 | 第三方服务 | 和风天气、兼容 OpenAI 格式的大模型 API、WxPusher |
 
 ## 界面预览
 
-安装向导（上传代码后访问 `/install`，自动检测环境并完成初始化）：
+安装向导（上传代码后访问 `/install`，自动检测环境、填写数据库信息并完成初始化）：
 
-| 环境检测 | 完成安装 |
+| ① 环境检测 | ② 数据库与账号 |
 | --- | --- |
-| ![安装向导-环境检测](docs/screenshots/install-step1.png) | ![安装向导-完成](docs/screenshots/install-done.png) |
+| ![安装向导-环境检测](docs/screenshots/install-step1.png) | ![安装向导-数据库与账号](docs/screenshots/install-step2.png) |
+
+| ③ 推送与 AI 配置 | ④ 完成安装 |
+| --- | --- |
+| ![安装向导-推送与 AI](docs/screenshots/install-step3.png) | ![安装向导-完成](docs/screenshots/install-done.png) |
 
 管理后台：
 
@@ -58,17 +62,17 @@ heartcron-reminder/
 ├── app.js                     # 后端入口：Express 服务 + 静态资源托管 + 定时任务加载
 ├── package.json               # 后端依赖与脚本
 ├── .env.example               # 环境变量示例（复制为 .env 使用）
-├── data/                      # SQLite 数据库文件目录（自动创建，已加入 .gitignore）
+├── data/                      # 安装锁等运行期文件目录（自动创建，已加入 .gitignore）
 ├── scripts/
-│   └── init-db.js             # 数据库初始化脚本：建表 + 预置默认配置与 Prompt
+│   └── init-db.js             # 数据库初始化脚本：建库建表 + 预置默认配置与 Prompt
 ├── src/
 │   ├── config/
-│   │   ├── index.js           # 运行时配置（端口、时区、数据库路径、登录账号）
+│   │   ├── index.js           # 运行时配置（端口、时区、MySQL 连接、登录账号）
 │   │   ├── constants.js       # 业务常量（推送时段、文案风格、字段白名单）
 │   │   └── defaultPrompt.js   # 默认 AI 提示词模板与兜底文案
 │   ├── db/
-│   │   ├── index.js           # SQLite 访问层（Promise 化封装）
-│   │   └── schema.sql         # 5 张表的建表语句
+│   │   ├── index.js           # MySQL 访问层（mysql2 连接池 + Promise 化封装）
+│   │   └── schema.sql         # 5 张表的建表语句（InnoDB / utf8mb4）
 │   ├── middleware/
 │   │   ├── auth.js            # 登录鉴权中间件
 │   │   └── errorHandler.js    # 404 与统一异常处理
@@ -123,11 +127,17 @@ cd heartcron-reminder
 npm install
 ```
 
-> Node.js >= 16。项目使用 `sqlite3` v6（提供 Node 20+ 的预编译二进制），在较旧的 Node 版本上安装时可能需要本地编译工具链，建议直接使用 Node 20 及以上版本。
+> Node.js >= 16（推荐 20 LTS）。数据库使用纯 JS 实现的 `mysql2` 驱动，不需要编译工具链。
 
-### 2. 配置环境变量（两种方式二选一）
+### 2. 准备 MySQL 数据库
 
-方式 A（推荐）：启动服务后用浏览器打开 `/install` 网页安装向导，按提示填写账号密码与各项密钥，向导会自动生成 `.env` 并初始化数据库。
+MySQL 5.7 / 8.0 / MariaDB 10.4 及以上均可，数据库本身不需要提前创建（安装向导或 `npm run init-db` 会自动建库建表），只需要准备好**主机、端口、账号、密码**。
+
+> 使用的数据库账号需要具备 `CREATE DATABASE` 权限。宝塔面板里安装的 MySQL，直接用 `root` 账号即可；也可以先手动建库（`utf8mb4`），再把账号只授权到该库。
+
+### 3. 配置环境变量（两种方式二选一）
+
+方式 A（推荐）：启动服务后用浏览器打开 `/install` 网页安装向导，按提示填写**数据库主机 / 端口 / 账号 / 密码 / 库名**与后台账号，向导会测试连接、自动建库建表并生成 `.env`。
 
 方式 B：手动复制并编辑 `.env`：
 
@@ -144,19 +154,24 @@ cp .env.example .env    # Windows: copy .env.example .env
 | `ADMIN_PASSWORD` | 后台登录密码 | heartcron123 |
 | `SESSION_SECRET` | 会话加密密钥 | 需自行修改 |
 | `SESSION_MAX_AGE` | 会话有效期（毫秒） | 7 天 |
-| `DB_PATH` | SQLite 文件路径 | data/heartcron.db |
+| `DB_HOST` | 数据库主机 | 127.0.0.1 |
+| `DB_PORT` | 数据库端口 | 3306 |
+| `DB_USER` | 数据库账号 | root |
+| `DB_PASSWORD` | 数据库密码 | 空 |
+| `DB_NAME` | 数据库名称（不存在时自动创建） | heartcron |
+| `DB_CONNECTION_LIMIT` | 连接池大小 | 10 |
 | `TZ` | 定时任务时区 | Asia/Shanghai |
 | `HTTP_TIMEOUT` | 外部请求超时（毫秒） | 10000 |
 
-### 3. 初始化数据库（网页向导会自动完成，手动部署时执行）
+### 4. 初始化数据库（网页向导会自动完成，手动部署时执行）
 
 ```bash
 npm run init-db
 ```
 
-脚本会创建 `data/heartcron.db`、建好 5 张表，并写入默认系统配置与默认 Prompt 模板。重复执行不会覆盖已有数据。
+脚本会连接 `.env` 中配置的 MySQL，数据库不存在时自动创建，然后建好 5 张表并写入默认系统配置与默认 Prompt 模板。重复执行不会覆盖已有数据。
 
-### 4. 构建前端
+### 5. 构建前端
 
 ```bash
 npm run build          # 等价于 cd frontend && npm install && npm run build
@@ -170,7 +185,7 @@ npm run build          # 等价于 cd frontend && npm install && npm run build
 cd frontend && npm run dev   # 访问 http://localhost:5173，/api 自动代理到 8080
 ```
 
-### 5. 启动服务
+### 6. 启动服务
 
 ```bash
 npm start
@@ -185,17 +200,19 @@ pm2 save
 pm2 logs heartcron
 ```
 
-### 6. 打开安装向导 / 登录后台
+### 7. 打开安装向导 / 登录后台
 
 1. 打开 `http://服务器地址:8080`，未安装时会自动跳转到安装向导 `/install`
-2. 按向导完成「环境检测 → 站点与账号 → 推送与 AI 配置 → 完成安装」
+2. 按向导完成「环境检测 → 数据库与账号 → 推送与 AI 配置 → 完成安装」
 3. 使用向导中设置的账号密码登录后台
 4. 进入「全局配置」补充 WxPusher、和风天气与大模型参数（向导中已填写的会保留）
 5. 点击「一键测试推送」验证链路，然后到「定时任务」「纪念日」「待办事项」配置内容
 
 ## 服务器部署（上传即用）
 
-部署到自己的服务器只需要：**上传代码 → 安装依赖 → 启动服务 → 浏览器打开安装向导**，不需要手工建库、改配置文件。
+部署到自己的服务器只需要：**上传代码 → 安装依赖 → 启动服务 → 浏览器打开安装向导**，不需要手工建库、写 SQL、改配置文件——数据库和表都由向导自动创建。
+
+> 前提：服务器上已经装好 MySQL / MariaDB，并知道它的主机、端口、账号、密码。若还没装，用宝塔面板「软件商店」一键安装 MySQL 5.7 或 8.0 即可。
 
 ```bash
 # 1. 上传代码到服务器（git clone 或直接上传压缩包后解压）
@@ -222,14 +239,16 @@ pm2 save && pm2 startup
 
 | 步骤 | 说明 |
 | --- | --- |
-| ① 环境检测 | Node 版本、后端依赖模块、SQLite 扩展可用性、数据目录写权限、前端构建产物、外网连通性、时区 |
-| ② 站点与账号 | 服务端口、时区、数据库文件路径、管理员账号密码、SESSION_SECRET |
+| ① 环境检测 | Node 版本、后端依赖模块、MySQL 驱动（mysql2）、项目目录写权限、前端构建产物、外网连通性、时区 |
+| ② 数据库与账号 | 服务端口、时区、**数据库主机 / 端口 / 账号 / 密码 / 库名（带「测试连接」按钮）**、管理员账号密码、SESSION_SECRET |
 | ③ 推送与 AI 配置 | WxPusher、和风天气、大模型参数与昵称（可跳过，后台再填） |
-| ④ 完成安装 | 写入 `.env`、建表、写入配置与示例数据、生成 `data/install.lock`、注册定时任务 |
+| ④ 完成安装 | 测试数据库连接、写入 `.env`、自动建库建表、写入配置与示例数据、生成 `data/install.lock`、注册定时任务 |
 
 向导执行过程中会备份原有 `.env` 为 `.env.bak`；配置写入后会**热加载生效，无需重启进程**。
 
-> 本项目是 Node.js + SQLite 架构，**不需要填写数据库主机、账号、密码**（SQLite 是单文件数据库，向导里只需要选一个数据库文件路径）。若需要 MySQL 版本，需要另行改造数据访问层。
+> 第 ② 步的「测试连接」会真实连一次 MySQL：连不上会直接告诉你原因（账号密码错误 / 无法连接主机 / 端口不通等），确认无误后再点「开始安装」。安装过程会先测试连接，连接失败不会写入任何配置。
+>
+> 数据库不存在时向导会自动 `CREATE DATABASE`（utf8mb4），已存在时只执行 `CREATE TABLE IF NOT EXISTS`，不会覆盖已有数据。
 
 ### 重新安装
 
@@ -237,12 +256,13 @@ pm2 save && pm2 startup
 
 ### 宝塔面板部署
 
-1. 在「软件商店」安装 **Node.js 版本管理器**（Node 20 或更高）与 **PM2 管理器**
-2. 把项目上传到 `/www/wwwroot/heartcron-reminder`，或直接用 Git 拉取
-3. 终端进入项目目录执行 `npm install --omit=dev && npm run build`
-4. 在「PM2 管理器」中添加项目：启动文件选 `app.js`，运行目录选项目根目录，端口填 8080
-5. 在「网站 → 添加站点」里把域名反向代理到 `http://127.0.0.1:8080`，并在「安全」中放行端口
-6. 浏览器访问 `http://你的域名/install` 完成安装向导
+1. 在「软件商店」安装 **MySQL 5.7 / 8.0**、**Node.js 版本管理器**（Node 20 或更高）与 **PM2 管理器**
+2. 记下 MySQL 的 root 密码（「数据库」页面可以查看/修改）
+3. 把项目上传到 `/www/wwwroot/heartcron-reminder`，或直接用 Git 拉取
+4. 终端进入项目目录执行 `npm install --omit=dev && npm run build`
+5. 在「PM2 管理器」中添加项目：启动文件选 `app.js`，运行目录选项目根目录，端口填 8080
+6. 在「网站 → 添加站点」里把域名反向代理到 `http://127.0.0.1:8080`，并在「安全」中放行端口
+7. 浏览器访问 `http://你的域名/install`，第 ② 步填数据库主机 `127.0.0.1`、端口 `3306`、账号 `root` 与 root 密码，点「测试连接」通过后开始安装
 
 ### Nginx 反向代理示例
 
@@ -281,7 +301,7 @@ pm2 delete heartcron                # 删除进程
 
 ## 手动安装（不用向导时）
 
-如果已经按「快速开始」的步骤 1~5 手动配置好 `.env` 并执行过 `npm run init-db`，就不需要走安装向导，直接登录后台即可：
+如果已经按「快速开始」的步骤 1~6 手动配置好 `.env`（含 MySQL 连接信息）并执行过 `npm run init-db`，就不需要走安装向导，直接登录后台即可：
 
 1. 打开 `http://服务器地址:8080`，使用 `.env` 中的账号密码登录
 2. 进入「全局配置」填写 WxPusher AppToken / UID、和风天气 Key / 城市 ID、大模型接口地址与 Key
@@ -290,7 +310,7 @@ pm2 delete heartcron                # 删除进程
 
 ## 数据库表结构
 
-建表语句见 [src/db/schema.sql](src/db/schema.sql)，共 5 张表：
+建表语句见 [src/db/schema.sql](src/db/schema.sql)，共 5 张表，全部为 InnoDB 引擎、`utf8mb4` 字符集（支持中文与 emoji）：
 
 | 表名 | 说明 | 关键字段 |
 | --- | --- | --- |
@@ -372,7 +392,7 @@ pm2 delete heartcron                # 删除进程
 
 ## 安全说明
 
-- WxPusher Token、和风天气 Key、大模型 API Key 仅存储在后端 SQLite，接口返回时统一掩码（如 `sk-a****cdef`），前端不接触明文
+- WxPusher Token、和风天气 Key、大模型 API Key 仅存储在后端 MySQL，接口返回时统一掩码（如 `sk-a****cdef`），前端不接触明文
 - 更新配置时提交掩码值表示「不修改原密钥」，留空同样保持原值
 - 全部业务接口都经过登录校验，登录失败 10 次锁定该 IP 5 分钟
 - 所有外部 HTTP 请求都设置超时与异常捕获，失败会降级写入推送日志
@@ -389,7 +409,11 @@ pm2 delete heartcron                # 删除进程
 
 **访问 /install 显示「系统已安装」**：说明 `data/install.lock` 已存在，属于正常的防重复安装保护；需要重新安装时删除该文件再刷新页面。
 
-**安装向导里需要填数据库地址吗**：不需要。项目使用 SQLite 单文件数据库，向导里只选择数据库文件路径（默认 `data/heartcron.db`），没有主机、账号、密码这些概念。
+**安装向导里需要填数据库地址吗**：需要。项目使用 MySQL，向导第 ② 步要填数据库主机、端口、账号、密码与库名，可以先点「测试连接」确认。库不存在时安装会自动创建，因此账号需要 `CREATE DATABASE` 权限。
+
+**测试连接提示「数据库账号或密码错误」**：核对宝塔「数据库」页面里的 root 密码；如果数据库在另一台服务器上，还要在 MySQL 里授权该账号从本站 IP 访问（`GRANT ALL ON *.* TO 'user'@'%' IDENTIFIED BY '密码';` 后 `FLUSH PRIVILEGES;`），并在防火墙放行 3306。
+
+**服务启动报「数据库连接失败」**：检查 `.env` 里的 `DB_HOST` / `DB_PORT` / `DB_USER` / `DB_PASSWORD` / `DB_NAME` 是否正确、MySQL 是否已启动。想重新配置可以删除 `data/install.lock` 与 `.env` 后重启服务，再访问 `/install`。
 
 **安装后改了端口没生效**：端口在进程启动时监听，改完 `.env` 需要重启服务（`pm2 restart heartcron`）；其余配置（密钥、Prompt、任务）都是即时生效的。
 

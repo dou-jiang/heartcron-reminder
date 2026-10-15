@@ -3,6 +3,7 @@
  * 页面：GET /install（免登录，未安装时其他地址会自动跳转到此页）
  * 接口：GET  /api/install/status  安装状态 + 环境检测
  *      POST /api/install/check   重新执行环境检测
+ *      POST /api/install/test-db 测试 MySQL 连接（向导第 2 步「测试连接」）
  *      POST /api/install/run     执行安装
  */
 const fs = require('fs');
@@ -10,7 +11,7 @@ const express = require('express');
 
 const config = require('../config');
 const asyncHandler = require('../utils/asyncHandler');
-const { getInstallStatus, performInstall, runEnvironmentChecks } = require('../services/installer');
+const { getInstallStatus, performInstall, runEnvironmentChecks, testDatabase } = require('../services/installer');
 
 /** 安装页面路由（挂载到 /install） */
 const pageRouter = express.Router();
@@ -39,6 +40,13 @@ apiRouter.post(
       return res.status(403).json({ success: false, message: '系统已安装，如需重新安装请删除 data/install.lock' });
     }
     res.json({ success: true, data: { checks: await runEnvironmentChecks() } });
+  })
+);
+
+apiRouter.post(
+  '/test-db',
+  asyncHandler(async (req, res) => {
+    res.json({ success: true, data: await testDatabase(req.body || {}) });
   })
 );
 

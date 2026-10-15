@@ -56,7 +56,7 @@ router.post(
       'INSERT INTO anniversary (name, target_date, enable, show_countdown) VALUES (?, ?, ?, ?)',
       [String(name).trim(), targetDate, Number(enable) === 0 ? 0 : 1, Number(showCountdown) === 0 ? 0 : 1]
     );
-    const row = await get('SELECT * FROM anniversary WHERE id = ?', [result.lastID]);
+    const row = await get('SELECT * FROM anniversary WHERE id = ?', [result.insertId]);
     res.json({ success: true, data: { anniversary: toAnniversaryView(row) }, message: '纪念日已创建' });
   })
 );
@@ -86,7 +86,7 @@ router.delete(
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
     const result = await run('DELETE FROM anniversary WHERE id = ?', [id]);
-    if (!result.changes) return res.status(404).json({ success: false, message: '纪念日不存在' });
+    if (!result.affectedRows) return res.status(404).json({ success: false, message: '纪念日不存在' });
     res.json({ success: true, data: { id }, message: '纪念日已删除' });
   })
 );

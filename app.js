@@ -4,7 +4,7 @@
  *
  * 启动流程：
  *   1. 加载 .env 环境变量
- *   2. 初始化 SQLite 数据库（建表 + 预置默认配置）
+ *   2. 连接 MySQL 并初始化数据库（建表 + 预置默认配置）
  *   3. 注册 Express 中间件与 REST API 路由
  *   4. 托管前端打包产物 frontend/dist
  *   5. 读取 remind_task 表，注册全部定时任务
@@ -17,7 +17,7 @@ const session = require('express-session');
 
 const config = require('./src/config');
 const logger = require('./src/utils/logger');
-const { initDatabase } = require('./src/db');
+const { initDatabase, ensureDatabase } = require('./src/db');
 const apiRoutes = require('./src/routes');
 const { pageRouter: installPageRouter, apiRouter: installApiRouter } = require('./src/routes/install');
 const { reloadSchedules } = require('./src/services/scheduler');
@@ -53,7 +53,17 @@ function mountWebApp(app) {
 async function bootstrap() {
   // 未安装时不初始化数据库，由网页安装向导完成建表与初始配置
   if (config.isInstalled()) {
-    await initDatabase();
+    try {
+      await ensureDatabase();
+      await initDatabase();
+    } catch (err) {
+      logger.error('数据库连接失败：' + err.message);
+      logger.error(
+        '请检查 .env 中的 MySQL 配置（DB_HOST / DB_PORT / DB_USER / DB_PASSWORD / DB_NAME）；' +
+          '如需重新配置，删除 data/install.lock 与 .env 后重启服务，再访问 /install'
+      );
+      throw err;
+    }
   } else {
     logger.warn('系统尚未安装：请在浏览器访问 /install 完成安装向导');
   }
@@ -116,7 +126,7 @@ async function bootstrap() {
 
   app.listen(config.port, () => {
     logger.info(`HeartCron 心时 服务已启动：http://localhost:${config.port}`);
-    logger.info(`数据库文件：${config.dbPath}`);
+    logger.info(`数据库连接：${config.mysql.host}:${config.mysql.port}/${config.mysql.database}`);
   });
 
   // 服务启动后加载全部启用的定时任务（未安装时跳过，安装完成后会自动加载）

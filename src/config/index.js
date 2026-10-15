@@ -47,8 +47,15 @@ function buildConfig() {
     timezone: readEnv('TZ', 'Asia/Shanghai'),
     /** 外部请求超时（毫秒） */
     httpTimeout: Number(readEnv('HTTP_TIMEOUT', '10000')),
-    /** SQLite 数据库文件绝对路径 */
-    dbPath: path.resolve(rootDir, readEnv('DB_PATH', 'data/heartcron.db')),
+    /** MySQL 数据库连接配置 */
+    mysql: {
+      host: readEnv('DB_HOST', '127.0.0.1'),
+      port: Number(readEnv('DB_PORT', '3306')),
+      user: readEnv('DB_USER', 'root'),
+      password: readEnv('DB_PASSWORD', ''),
+      database: readEnv('DB_NAME', 'heartcron'),
+      connectionLimit: Number(readEnv('DB_CONNECTION_LIMIT', '10')),
+    },
     /** 前端打包产物目录 */
     webDistDir: path.resolve(rootDir, 'frontend', 'dist'),
     /** 建表 SQL 文件 */
@@ -83,12 +90,11 @@ function reloadRuntimeConfig() {
 
 /**
  * 是否已完成安装
- * 判定：存在安装锁；或（兼容手动部署）.env 与数据库文件同时存在
+ * 判定：存在安装锁，或（手动部署）已存在 .env
  * @returns {boolean}
  */
 function isInstalled() {
-  if (fs.existsSync(installLockFile)) return true;
-  return fs.existsSync(envFile) && fs.existsSync(config.dbPath);
+  return fs.existsSync(installLockFile) || fs.existsSync(envFile);
 }
 
 /**

@@ -1,12 +1,14 @@
 /**
  * 数据库初始化脚本：npm run init-db
- * 作用：创建 SQLite 数据库文件、建表、写入默认系统配置与默认 Prompt 模板
+ * 作用：连接 .env 中配置的 MySQL，数据库不存在时自动创建，然后建表、
+ *       写入默认系统配置与默认 Prompt 模板
  */
 const config = require('../src/config');
 const logger = require('../src/utils/logger');
-const { initDatabase, getConfigRow, all } = require('../src/db');
+const { ensureDatabase, initDatabase, getConfigRow, all } = require('../src/db');
 
 (async function main() {
+  const created = await ensureDatabase();
   await initDatabase();
 
   const cfg = await getConfigRow();
@@ -16,7 +18,9 @@ const { initDatabase, getConfigRow, all } = require('../src/db');
 
   console.log('');
   console.log('HeartCron 心时 —— 数据库初始化完成');
-  console.log('数据库文件   ：' + config.dbPath);
+  console.log('数据库地址   ：' + config.mysql.host + ':' + config.mysql.port);
+  console.log('数据库名称   ：' + config.mysql.database + (created ? '（本次新建）' : '（已存在）'));
+  console.log('数据库账号   ：' + config.mysql.user);
   console.log('默认风格     ：' + cfg.default_style);
   console.log('Prompt 长度  ：' + String(cfg.ai_prompt_template || '').length + ' 字符');
   console.log('已有定时任务 ：' + taskCount + ' 条');

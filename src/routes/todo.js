@@ -53,7 +53,7 @@ router.post(
       Number(enable) === 0 ? 0 : 1,
       Number(onlyWorkday) === 1 ? 1 : 0,
     ]);
-    const row = await get('SELECT * FROM todo_item WHERE id = ?', [result.lastID]);
+    const row = await get('SELECT * FROM todo_item WHERE id = ?', [result.insertId]);
     res.json({ success: true, data: { todo: toTodoView(row) }, message: '待办已创建' });
   })
 );
@@ -85,7 +85,7 @@ router.delete(
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
     const result = await run('DELETE FROM todo_item WHERE id = ?', [id]);
-    if (!result.changes) return res.status(404).json({ success: false, message: '待办不存在' });
+    if (!result.affectedRows) return res.status(404).json({ success: false, message: '待办不存在' });
     res.json({ success: true, data: { id }, message: '待办已删除' });
   })
 );

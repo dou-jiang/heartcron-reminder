@@ -68,7 +68,7 @@ router.post(
     );
     await reloadSchedules();
 
-    const row = await get('SELECT * FROM remind_task WHERE id = ?', [result.lastID]);
+    const row = await get('SELECT * FROM remind_task WHERE id = ?', [result.insertId]);
     res.json({ success: true, data: { task: toTaskView(row) }, message: '任务已创建' });
   })
 );
@@ -102,7 +102,7 @@ router.delete(
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
     const result = await run('DELETE FROM remind_task WHERE id = ?', [id]);
-    if (!result.changes) return res.status(404).json({ success: false, message: '任务不存在' });
+    if (!result.affectedRows) return res.status(404).json({ success: false, message: '任务不存在' });
     await reloadSchedules();
     res.json({ success: true, data: { id }, message: '任务已删除' });
   })

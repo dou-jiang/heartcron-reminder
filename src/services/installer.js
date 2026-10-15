@@ -1,9 +1,8 @@
 /**
- * 网页安装向导服务
- * 职责：环境自检、写入 .env、初始化数据库、写入初始系统配置与示例数据、生成安装锁
- * 与 PHP 项目的「安装向导」等价，只是本项目运行在 Node.js + SQLite 上：
- *   - 不需要填写数据库账号密码，SQLite 是一个文件数据库
- *   - 环境检测项从「PHP 扩展」换成「Node 版本 / 依赖模块 / sqlite3 可用性 / 目录可写」
+ * 网页安装向导服务（MySQL 版）
+ * 职责：环境自检、测试数据库连接、写入 .env、创建数据库与数据表、写入初始配置与示例数据、生成安装锁
+ * 与 PHP 项目的「安装向导」等价：先检测运行环境（Node 版本 / 依赖模块 / MySQL 驱动 / 目录权限 / 网络），
+ * 再填写数据库信息与管理员账号，一键完成安装。
  */
 const fs = require('fs');
 const path = require('path');
@@ -12,7 +11,7 @@ const crypto = require('crypto');
 const config = require('../config');
 const logger = require('../utils/logger');
 const { http } = require('../utils/http');
-const { run, get, resetDbConnection, initDatabase } = require('../db');
+const { run, get, testConnection, ensureDatabase, initDatabase, resetDbConnection } = require('../db');
 const { STYLE_TYPES, DEFAULT_STYLE, DEFAULT_PUSH_TITLE } = require('../config/constants');
 const { DEFAULT_PROMPT_TEMPLATE } = require('../config/defaultPrompt');
 const { formatDate } = require('../utils/date');
@@ -27,11 +26,61 @@ const REQUIRED_MODULES = [
   'axios',
   'node-schedule',
   'cron-parser',
-  'sqlite3',
+  'mysql2',
 ];
 
-/** 安装向导可写入的默认端口 */
+/** 安装向导默认值 */
 const DEFAULT_PORT = 8080;
+const DEFAULT_DB = { host: '127.0.0.1', port: 3306, user: 'root', password: '', database: 'heartcron' };
+
+/**
+ * 把 MySQL 错误转换成中文提示
+ * @param {any} err 异常对象
+ * @returns {string}
+ */
+function describeDbError(err) {
+  const map = {
+    ECONNREFUSED: '无法连接数据库服务器，请检查主机、端口是否正确以及 MySQL 是否已启动',
+    ETIMEDOUT: '连接数据库超时，请检查网络与防火墙设置',
+    ENOTFOUND: '数据库主机地址无法解析，请检查主机地址是否填写正确',
+    ER_ACCESS_DENIED_ERROR: '数据库账号或密码错误（远程连接还需授权该账号从本机访问）',
+    ER_DBACCESS_DENIED_ERROR: '当前数据库账号没有访问该库的权限',
+    ER_NOT_SUPPORTED_AUTH_MODE: 'MySQL 认证方式不兼容，请升级 MySQL 或调整该用户的认证插件',
+    ER_NO_SUCH_TABLE: '数据表不存在，请重新执行安装初始化',
+  };
+  return map[err && err.code] || (err && err.message) || '数据库连接失败';
+}
+
+/**
+ * 读取表单中的数据库配置并做默认值兜底
+ * @param {Object} payload 表单数据
+ * @returns {{host:string, port:number, user:string, password:string, database:string}}
+ */
+function normalizeDbPayload(payload = {}) {
+  return {
+    host: String(payload.dbHost === undefined || payload.dbHost === null || payload.dbHost === '' ? DEFAULT_DB.host : payload.dbHost).trim(),
+    port: Number(payload.dbPort || DEFAULT_DB.port),
+    user: String(payload.dbUser === undefined || payload.dbUser === null || payload.dbUser === '' ? DEFAULT_DB.user : payload.dbUser).trim(),
+    password: payload.dbPassword === undefined || payload.dbPassword === null ? '' : String(payload.dbPassword),
+    database: String(payload.dbName === undefined || payload.dbName === null || payload.dbName === '' ? DEFAULT_DB.database : payload.dbName).trim(),
+  };
+}
+
+/**
+ * 校验数据库连接参数
+ * @param {Object} db 数据库配置
+ * @returns {string[]} 错误信息
+ */
+function validateDbPayload(db) {
+  const errors = [];
+  if (!db.host) errors.push('数据库主机不能为空');
+  if (!Number.isInteger(db.port) || db.port < 1 || db.port > 65535) errors.push('数据库端口需为 1~65535 之间的整数');
+  if (!db.user) errors.push('数据库账号不能为空');
+  if (!db.database) errors.push('数据库名称不能为空');
+  else if (!/^[A-Za-z0-9_$]+$/.test(db.database)) errors.push('数据库名称只能包含字母、数字与下划线');
+  else if (db.database.length > 64) errors.push('数据库名称不能超过 64 个字符');
+  return errors;
+}
 
 /**
  * 检测 Node 运行环境与依赖是否就绪
@@ -71,58 +120,82 @@ async function runEnvironmentChecks() {
     hint: '请在项目根目录执行 npm install 安装依赖',
   });
 
-  // 3. sqlite3 模块可实际使用（相当于 PHP 的扩展可用性检测）
-  let sqliteOk = false;
-  let sqliteDetail = '未安装';
+  // 3. MySQL 驱动（相当于 PHP 的 mysqli / pdo_mysql 扩展检测）
+  let driverOk = false;
+  let driverDetail = '未安装';
   try {
     // eslint-disable-next-line global-require
-    const sqlite3 = require('sqlite3');
-    sqliteDetail = 'v' + (require('sqlite3/package.json').version || '');
-    await new Promise((resolve, reject) => {
-      const db = new sqlite3.Database(':memory:');
-      db.get('SELECT 1 AS ok', (err) => {
-        db.close(() => (err ? reject(err) : resolve()));
-      });
-    });
-    sqliteOk = true;
+    const pkg = require('mysql2/package.json');
+    driverDetail = 'mysql2 v' + (pkg.version || '');
+    driverOk = true;
   } catch (err) {
-    sqliteDetail = err.message;
+    driverDetail = err.message;
   }
   checks.push({
-    key: 'sqlite3',
-    name: 'SQLite 数据库扩展',
+    key: 'mysql2',
+    name: 'MySQL 驱动（mysql2）',
     level: 'error',
-    ok: sqliteOk,
-    current: sqliteDetail,
-    required: '可正常读写',
-    hint: 'sqlite3 原生模块加载失败，请重新执行 npm install（必要时安装编译工具链）',
+    ok: driverOk,
+    current: driverDetail,
+    required: '已安装',
+    hint: '请在项目根目录执行 npm install mysql2',
   });
 
-  // 4. 数据目录可写
-  const dataDir = path.dirname(config.dbPath);
+  // 4. 数据库连接：已安装时实测，未安装时提示在向导中填写
+  if (config.isInstalled()) {
+    let ok = false;
+    let detail = '';
+    try {
+      const info = await testConnection();
+      ok = true;
+      detail = `已连接 MySQL ${info.version} · 数据库 ${config.mysql.database}`;
+    } catch (err) {
+      detail = describeDbError(err);
+    }
+    checks.push({
+      key: 'database',
+      name: 'MySQL 数据库连接',
+      level: 'error',
+      ok,
+      current: detail,
+      required: `${config.mysql.host}:${config.mysql.port}/${config.mysql.database}`,
+      hint: '请检查 .env 中的 DB_HOST / DB_PORT / DB_USER / DB_PASSWORD / DB_NAME',
+    });
+  } else {
+    checks.push({
+      key: 'database',
+      name: 'MySQL 数据库连接',
+      level: 'info',
+      ok: true,
+      current: '待配置（在第 2 步填写后点击「测试连接」）',
+      required: 'MySQL 5.7+ / 8.0 / MariaDB 10.4+',
+      hint: '需要提前准备好数据库主机、账号与密码，数据库不存在时向导会自动创建',
+    });
+  }
+
+  // 5. 项目目录可写（需要写入 .env 与安装锁）
   let writable = false;
-  let writableDetail = dataDir;
+  let writableDetail = config.rootDir;
   try {
-    fs.mkdirSync(dataDir, { recursive: true });
-    const testFile = path.join(dataDir, '.write-test');
+    const testFile = path.join(config.rootDir, '.install-write-test');
     fs.writeFileSync(testFile, 'ok');
     fs.unlinkSync(testFile);
     writable = true;
-    writableDetail = `${dataDir} 可写`;
+    writableDetail = `${config.rootDir} 可写`;
   } catch (err) {
     writableDetail = err.message;
   }
   checks.push({
-    key: 'dataDir',
-    name: '数据目录可写',
+    key: 'rootDir',
+    name: '项目目录可写',
     level: 'error',
     ok: writable,
     current: writableDetail,
     required: '可读写',
-    hint: '请给运行用户授予项目目录写权限（宝塔可在「文件」中修改权限为 755/777）',
+    hint: '安装需要写入 .env 与 data/install.lock，请给运行用户授予项目目录写权限（宝塔可在「文件」中修改权限）',
   });
 
-  // 5. 前端构建产物
+  // 6. 前端构建产物
   const distIndex = path.join(config.webDistDir, 'index.html');
   const hasDist = fs.existsSync(distIndex);
   checks.push({
@@ -135,7 +208,7 @@ async function runEnvironmentChecks() {
     hint: '可在本地执行 npm run build 后上传 frontend/dist，或在服务器执行 npm run build；缺失时只能访问接口',
   });
 
-  // 6. 外网连通性（推送与天气接口）
+  // 7. 外网连通性（推送、天气与大模型接口）
   let networkOk = false;
   let networkDetail = '检测超时';
   try {
@@ -155,7 +228,7 @@ async function runEnvironmentChecks() {
     hint: '服务器无法访问外网时，天气、AI 文案与微信推送都会失败，请检查网络或代理设置',
   });
 
-  // 7. 时区与系统时间
+  // 8. 时区与系统时间
   checks.push({
     key: 'timezone',
     name: '时区与系统时间',
@@ -166,7 +239,7 @@ async function runEnvironmentChecks() {
     hint: '定时任务按此时区执行，如有偏差请在 .env 中修改 TZ',
   });
 
-  // 8. 安装状态
+  // 9. 安装状态
   const installed = config.isInstalled();
   checks.push({
     key: 'installed',
@@ -175,7 +248,7 @@ async function runEnvironmentChecks() {
     ok: !installed,
     current: installed ? '已安装' : '未安装',
     required: '未安装',
-    hint: '如需重新安装，请删除 data/install.lock 后刷新本页面',
+    hint: '如需重新安装，请删除 data/install.lock 与 .env 后刷新本页面',
   });
 
   return checks;
@@ -203,7 +276,7 @@ async function getInstallStatus() {
     defaults: {
       port: DEFAULT_PORT,
       timezone: config.timezone,
-      dbPath: 'data/heartcron.db',
+      db: { ...DEFAULT_DB },
       boyName: '我',
       girlName: '宝贝',
       defaultStyle: DEFAULT_STYLE,
@@ -235,11 +308,7 @@ function validateInstallPayload(payload = {}) {
   const port = Number(payload.port || DEFAULT_PORT);
   if (!Number.isInteger(port) || port < 1 || port > 65535) errors.push('服务端口需为 1~65535 之间的整数');
 
-  if (payload.dbPath) {
-    const resolved = path.resolve(config.rootDir, String(payload.dbPath));
-    if (!resolved.startsWith(config.rootDir)) errors.push('数据库文件路径必须位于项目目录内');
-    if (path.extname(resolved) !== '.db') errors.push('数据库文件需以 .db 结尾，例如 data/heartcron.db');
-  }
+  errors.push(...validateDbPayload(normalizeDbPayload(payload)));
 
   if (payload.timezone && !/^[A-Za-z]+(?:[_-][A-Za-z]+)*\/[A-Za-z]+(?:[_-][A-Za-z]+)*$/.test(String(payload.timezone))) {
     errors.push('时区格式不正确，例如 Asia/Shanghai');
@@ -248,6 +317,46 @@ function validateInstallPayload(payload = {}) {
     errors.push(`文案风格必须是：${STYLE_TYPES.join(' / ')}`);
   }
   return errors;
+}
+
+/**
+ * 测试数据库连接（向导第 2 步的「测试连接」按钮）
+ * @param {Object} payload 表单数据
+ * @returns {Promise<Object>}
+ */
+async function testDatabase(payload = {}) {
+  const db = normalizeDbPayload(payload);
+  const errors = validateDbPayload(db);
+  if (errors.length) {
+    const err = new Error(errors.join('；'));
+    err.status = 400;
+    throw err;
+  }
+
+  try {
+    const info = await testConnection({
+      host: db.host,
+      port: db.port,
+      user: db.user,
+      password: db.password,
+      database: db.database,
+    });
+    return {
+      host: db.host,
+      port: db.port,
+      database: db.database,
+      mysqlVersion: info.version,
+      databaseExists: info.databaseExists,
+      tableCount: info.tableCount,
+      message: info.databaseExists
+        ? `连接成功：MySQL ${info.version}，数据库 ${db.database} 已存在（${info.tableCount} 张 HeartCron 数据表）`
+        : `连接成功：MySQL ${info.version}，数据库 ${db.database} 不存在，安装时会自动创建`,
+    };
+  } catch (err) {
+    const wrapped = new Error(describeDbError(err));
+    wrapped.status = 400;
+    throw wrapped;
+  }
 }
 
 /**
@@ -275,8 +384,13 @@ function buildEnvContent(values) {
     '# session 有效期（毫秒），默认 7 天',
     'SESSION_MAX_AGE=' + (values.sessionMaxAge || 7 * 24 * 60 * 60 * 1000),
     '',
-    '# SQLite 数据库文件路径',
-    'DB_PATH=' + values.dbPath,
+    '# ================= MySQL 数据库 =================',
+    'DB_HOST=' + values.db.host,
+    'DB_PORT=' + values.db.port,
+    'DB_USER=' + values.db.user,
+    'DB_PASSWORD=' + values.db.password,
+    'DB_NAME=' + values.db.database,
+    'DB_CONNECTION_LIMIT=' + (values.dbConnectionLimit || 10),
     '',
     '# 定时任务时区',
     'TZ=' + values.timezone,
@@ -337,7 +451,7 @@ async function seedSystemConfig(payload) {
  */
 async function seedDemoData() {
   const taskCount = await get('SELECT COUNT(*) AS total FROM remind_task');
-  if (!taskCount || taskCount.total === 0) {
+  if (!taskCount || Number(taskCount.total) === 0) {
     const demoTasks = [
       ['早安提醒', '0 30 9 * * *', '早安', '每天 09:30 推送'],
       ['午间关心', '0 30 12 * * *', '午间关心', '每天 12:30 推送'],
@@ -350,13 +464,13 @@ async function seedDemoData() {
   }
 
   const todoCount = await get('SELECT COUNT(*) AS total FROM todo_item');
-  if (!todoCount || todoCount.total === 0) {
+  if (!todoCount || Number(todoCount.total) === 0) {
     await run('INSERT INTO todo_item (content, enable, only_workday) VALUES (?, 1, 1)', ['记得吃维生素']);
     await run('INSERT INTO todo_item (content, enable, only_workday) VALUES (?, 1, 0)', ['早点睡觉，别熬夜']);
   }
 
   const anniversaryCount = await get('SELECT COUNT(*) AS total FROM anniversary');
-  if (!anniversaryCount || anniversaryCount.total === 0) {
+  if (!anniversaryCount || Number(anniversaryCount.total) === 0) {
     const target = new Date();
     target.setDate(target.getDate() + 30);
     await run('INSERT INTO anniversary (name, target_date, enable, show_countdown) VALUES (?, ?, 1, 1)', [
@@ -373,7 +487,7 @@ async function seedDemoData() {
  */
 async function performInstall(payload = {}) {
   if (config.isInstalled()) {
-    const err = new Error('系统已安装，如需重新安装请先删除 data/install.lock');
+    const err = new Error('系统已安装，如需重新安装请先删除 data/install.lock 与 .env');
     err.status = 403;
     throw err;
   }
@@ -385,70 +499,113 @@ async function performInstall(payload = {}) {
     throw err;
   }
 
+  const db = normalizeDbPayload(payload);
   const steps = [];
   const pushStep = (name, ok, message) => steps.push({ name, ok, message });
 
-  // 1. 写入 .env（已存在时先备份）
+  // 1. 测试数据库连接（先验证再写入任何配置）
+  let dbInfo;
+  try {
+    dbInfo = await testConnection({
+      host: db.host,
+      port: db.port,
+      user: db.user,
+      password: db.password,
+      database: db.database,
+    });
+  } catch (err) {
+    const wrapped = new Error(describeDbError(err));
+    wrapped.status = 400;
+    throw wrapped;
+  }
+  pushStep(
+    '测试数据库连接',
+    true,
+    `MySQL ${dbInfo.version} · ${db.host}:${db.port} · ` +
+      (dbInfo.databaseExists ? `数据库 ${db.database} 已存在` : `数据库 ${db.database} 将自动创建`)
+  );
+
+  // 2. 写入 .env（原文件备份为 .env.bak），失败时回滚，保证向导可以重跑
+  const envExisted = fs.existsSync(config.envFile);
+  const envBackup = config.envFile + '.bak';
+  if (envExisted) fs.copyFileSync(config.envFile, envBackup);
+
   const values = {
     port: Number(payload.port || DEFAULT_PORT),
     adminUsername: String(payload.adminUsername).trim(),
     adminPassword: String(payload.adminPassword),
     sessionSecret: payload.sessionSecret || '',
     sessionMaxAge: Number(payload.sessionMaxAge || 0) || undefined,
-    dbPath: String(payload.dbPath || 'data/heartcron.db').replace(/\\/g, '/'),
+    db,
+    dbConnectionLimit: Number(payload.dbConnectionLimit || 0) || undefined,
     timezone: String(payload.timezone || 'Asia/Shanghai'),
     httpTimeout: Number(payload.httpTimeout || 0) || undefined,
   };
 
-  if (fs.existsSync(config.envFile)) {
-    fs.copyFileSync(config.envFile, config.envFile + '.bak');
-    pushStep('备份原 .env', true, '已备份为 .env.bak');
+  try {
+    fs.writeFileSync(config.envFile, buildEnvContent(values), 'utf8');
+    pushStep('写入环境变量 .env', true, '账号密码、端口、时区与 MySQL 连接信息已写入' + (envExisted ? '（原文件已备份为 .env.bak）' : ''));
+
+    // 3. 让新配置立即生效（免重启）
+    config.reloadRuntimeConfig();
+    pushStep('应用新配置', true, `服务端口 ${config.port}，数据库 ${config.mysql.host}:${config.mysql.port}/${config.mysql.database}`);
+
+    // 4. 创建数据库（若不存在）并建表
+    const created = await ensureDatabase();
+    await resetDbConnection();
+    await initDatabase();
+    pushStep('初始化数据表', true, created ? `已创建数据库 ${config.mysql.database} 并建好 5 张表` : '5 张数据表已就绪（IF NOT EXISTS，不会覆盖已有数据）');
+
+    // 5. 写入表单中的系统配置
+    await seedSystemConfig(payload);
+    pushStep('写入系统配置', true, 'WxPusher / 天气 / 大模型 / 昵称等配置已保存');
+
+    // 6. 示例数据
+    if (payload.demoData) {
+      await seedDemoData();
+      pushStep('写入示例数据', true, '3 个定时任务、2 条待办、1 个纪念日（可在后台修改或删除）');
+    }
+
+    // 7. 安装锁
+    config.markInstalled({
+      version: require('../../package.json').version,
+      port: config.port,
+      database: `${config.mysql.host}:${config.mysql.port}/${config.mysql.database}`,
+    });
+    pushStep('生成安装锁', true, 'data/install.lock');
+
+    // 8. 重新加载定时任务
+    // eslint-disable-next-line global-require
+    const { reloadSchedules } = require('./scheduler');
+    const registered = await reloadSchedules();
+    pushStep('加载定时任务', true, `已注册 ${registered} 个任务`);
+  } catch (err) {
+    // 回滚 .env，避免出现「已写入配置但安装失败」的死锁状态
+    try {
+      if (envExisted) fs.copyFileSync(envBackup, config.envFile);
+      else if (fs.existsSync(config.envFile)) fs.unlinkSync(config.envFile);
+      config.reloadRuntimeConfig();
+    } catch (rollbackErr) {
+      logger.error('回滚 .env 失败：' + rollbackErr.message);
+    }
+    throw err;
   }
-  fs.writeFileSync(config.envFile, buildEnvContent(values), 'utf8');
-  pushStep('写入环境变量 .env', true, '账号密码、端口、时区与数据库路径已写入');
-
-  // 2. 让新配置立即生效（免重启）
-  config.reloadRuntimeConfig();
-  pushStep('应用新配置', true, `服务端口 ${config.port}，时区 ${config.timezone}`);
-
-  // 3. 初始化数据库（建表 + 默认配置）
-  await resetDbConnection();
-  await initDatabase();
-  pushStep('初始化 SQLite 数据库', true, config.dbPath);
-
-  // 4. 写入表单中的系统配置
-  await seedSystemConfig(payload);
-  pushStep('写入系统配置', true, 'WxPusher / 天气 / 大模型 / 昵称等配置已保存');
-
-  // 5. 示例数据
-  if (payload.demoData) {
-    await seedDemoData();
-    pushStep('写入示例数据', true, '3 个定时任务、2 条待办、1 个纪念日（可在后台修改或删除）');
-  }
-
-  // 6. 安装锁
-  config.markInstalled({ version: require('../../package.json').version, port: config.port });
-  pushStep('生成安装锁', true, 'data/install.lock');
-
-  // 7. 重新加载定时任务
-  // eslint-disable-next-line global-require
-  const { reloadSchedules } = require('./scheduler');
-  const registered = await reloadSchedules();
-  pushStep('加载定时任务', true, `已注册 ${registered} 个任务`);
 
   const hasDist = fs.existsSync(path.join(config.webDistDir, 'index.html'));
   if (!hasDist) {
     pushStep('前端构建产物', false, '未找到 frontend/dist，请执行 npm run build 或上传构建产物后刷新页面');
   }
 
-  logger.info(`安装完成：端口 ${config.port}，数据库 ${config.dbPath}`);
-  return { steps, adminUrl: `/`, port: config.port };
+  logger.info(`安装完成：端口 ${config.port}，数据库 ${config.mysql.host}:${config.mysql.port}/${config.mysql.database}`);
+  return { steps, adminUrl: '/', port: config.port };
 }
 
 module.exports = {
   runEnvironmentChecks,
   getInstallStatus,
   validateInstallPayload,
+  testDatabase,
   performInstall,
+  describeDbError,
   REQUIRED_MODULES,
 };

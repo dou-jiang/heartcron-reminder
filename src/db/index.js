@@ -1,46 +1,76 @@
 /**
- * SQLite 数据访问层
- * 统一封装 sqlite3 的回调式 API，对外暴露 Promise 化的 run / get / all / exec
+ * MySQL 数据访问层
+ * 基于 mysql2/promise 连接池，对外暴露 Promise 化的 run / get / all / query
+ * 约定：
+ *   - run() 返回 { insertId, affectedRows }
+ *   - 日期与时间字段统一按字符串返回（dateStrings），避免时区换算带来的偏差
  */
 const fs = require('fs');
-const path = require('path');
-const sqlite3 = require('sqlite3');
+const mysql = require('mysql2/promise');
 
 const config = require('../config');
 const logger = require('../utils/logger');
 const { DEFAULT_PROMPT_TEMPLATE } = require('../config/defaultPrompt');
 const { DEFAULT_PUSH_TITLE, DEFAULT_STYLE } = require('../config/constants');
 
-/** @type {sqlite3.Database|null} 数据库连接单例 */
-let db = null;
+/** @type {import('mysql2/promise').Pool|null} 连接池单例 */
+let pool = null;
 
 /**
- * 获取数据库连接（首次调用时建立连接）
- * @returns {sqlite3.Database}
+ * 组装 mysql2 连接参数
+ * @param {Object} [overrides] 覆盖项（安装向导测试连接时使用）
+ * @returns {Object}
+ */
+function buildConnectionOptions(overrides = {}) {
+  return {
+    host: config.mysql.host,
+    port: config.mysql.port,
+    user: config.mysql.user,
+    password: config.mysql.password,
+    database: config.mysql.database,
+    charset: 'utf8mb4',
+    // 日期字段以 'YYYY-MM-DD' / 'YYYY-MM-DD HH:mm:ss' 字符串返回
+    dateStrings: true,
+    ...overrides,
+  };
+}
+
+/**
+ * 获取连接池（首次调用时创建）
+ * @returns {import('mysql2/promise').Pool}
  */
 function getDb() {
-  if (db) return db;
+  if (pool) return pool;
+  pool = mysql.createPool({
+    ...buildConnectionOptions(),
+    waitForConnections: true,
+    connectionLimit: config.mysql.connectionLimit,
+    queueLimit: 0,
+    enableKeepAlive: true,
+  });
+  return pool;
+}
 
-  fs.mkdirSync(path.dirname(config.dbPath), { recursive: true });
-  db = new sqlite3.Database(config.dbPath);
-  db.run('PRAGMA journal_mode = WAL;');
-  db.run('PRAGMA foreign_keys = ON;');
-  return db;
+/**
+ * 执行 SQL 并返回原始结果
+ * @param {string} sql SQL 语句
+ * @param {Array} params 参数
+ * @returns {Promise<any>}
+ */
+async function query(sql, params = []) {
+  const [rows] = await getDb().query(sql, params);
+  return rows;
 }
 
 /**
  * 执行写入语句
  * @param {string} sql SQL 语句
  * @param {Array} params 参数
- * @returns {Promise<{lastID:number, changes:number}>}
+ * @returns {Promise<{insertId:number, affectedRows:number}>}
  */
-function run(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    getDb().run(sql, params, function onDone(err) {
-      if (err) return reject(err);
-      resolve({ lastID: this.lastID, changes: this.changes });
-    });
-  });
+async function run(sql, params = []) {
+  const [result] = await getDb().query(sql, params);
+  return { insertId: result.insertId, affectedRows: result.affectedRows };
 }
 
 /**
@@ -49,10 +79,9 @@ function run(sql, params = []) {
  * @param {Array} params 参数
  * @returns {Promise<Object|undefined>}
  */
-function get(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    getDb().get(sql, params, (err, row) => (err ? reject(err) : resolve(row)));
-  });
+async function get(sql, params = []) {
+  const rows = await query(sql, params);
+  return Array.isArray(rows) ? rows[0] : undefined;
 }
 
 /**
@@ -61,39 +90,103 @@ function get(sql, params = []) {
  * @param {Array} params 参数
  * @returns {Promise<Array<Object>>}
  */
-function all(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    getDb().all(sql, params, (err, rows) => (err ? reject(err) : resolve(rows || [])));
-  });
+async function all(sql, params = []) {
+  const rows = await query(sql, params);
+  return Array.isArray(rows) ? rows : [];
 }
 
 /**
- * 执行多语句 SQL（用于建表脚本）
- * @param {string} sql
+ * 建立一个独立连接（安装向导测试连接、执行建表脚本时使用）
+ * @param {Object} [overrides] 连接参数覆盖
+ * @returns {Promise<import('mysql2/promise').Connection>}
+ */
+async function createConnection(overrides = {}) {
+  return mysql.createConnection({ ...buildConnectionOptions(), ...overrides });
+}
+
+/**
+ * 测试数据库连接，返回服务端版本
+ * @param {Object} [overrides] 连接参数覆盖
+ * @returns {Promise<{version:string, databaseExists:boolean, tableCount:number}>}
+ */
+async function testConnection(overrides = {}) {
+  const options = buildConnectionOptions(overrides);
+  const databaseName = options.database;
+
+  // 先不带库名连接，判断数据库是否存在
+  const rootConn = await mysql.createConnection({ ...options, database: undefined });
+  let version = '';
+  let databaseExists = false;
+  try {
+    const [versionRows] = await rootConn.query('SELECT VERSION() AS version');
+    version = versionRows[0].version;
+    const [schemaRows] = await rootConn.query(
+      'SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = ?',
+      [databaseName]
+    );
+    databaseExists = schemaRows.length > 0;
+  } finally {
+    await rootConn.end();
+  }
+
+  let tableCount = 0;
+  if (databaseExists) {
+    const conn = await mysql.createConnection(options);
+    try {
+      const [rows] = await conn.query(
+        `SELECT COUNT(*) AS total FROM information_schema.TABLES
+          WHERE TABLE_SCHEMA = ?
+            AND TABLE_NAME IN ('system_config', 'remind_task', 'anniversary', 'todo_item', 'push_log')`,
+        [databaseName]
+      );
+      tableCount = Number(rows[0].total);
+    } finally {
+      await conn.end();
+    }
+  }
+
+  return { version, databaseExists, tableCount };
+}
+
+/**
+ * 确保数据库存在（不存在时创建）
+ * @returns {Promise<boolean>} 是否新建了数据库
+ */
+async function ensureDatabase() {
+  try {
+    const conn = await createConnection();
+    await conn.end();
+    return false;
+  } catch (err) {
+    if (err.code !== 'ER_BAD_DB_ERROR') throw err;
+  }
+
+  const conn = await mysql.createConnection({ ...buildConnectionOptions(), database: undefined });
+  try {
+    await conn.query(
+      `CREATE DATABASE IF NOT EXISTS \`${config.mysql.database}\`
+        DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`
+    );
+  } finally {
+    await conn.end();
+  }
+  return true;
+}
+
+/**
+ * 关闭连接池
  * @returns {Promise<void>}
  */
-function exec(sql) {
-  return new Promise((resolve, reject) => {
-    getDb().exec(sql, (err) => (err ? reject(err) : resolve()));
-  });
+async function closeDb() {
+  if (!pool) return;
+  const current = pool;
+  pool = null;
+  await current.end();
 }
 
 /**
- * 关闭当前数据库连接（安装向导切换数据库路径时使用）
- * @returns {Promise<void>}
- */
-function closeDb() {
-  return new Promise((resolve) => {
-    if (!db) return resolve();
-    const instance = db;
-    db = null;
-    instance.close(() => resolve());
-  });
-}
-
-/**
- * 重置数据库连接（关闭旧连接并按最新配置重新建立）
- * @returns {Promise<sqlite3.Database>}
+ * 重置连接池（安装向导切换数据库配置后调用）
+ * @returns {Promise<import('mysql2/promise').Pool>}
  */
 async function resetDbConnection() {
   await closeDb();
@@ -107,25 +200,31 @@ async function resetDbConnection() {
  */
 async function initDatabase() {
   const schema = fs.readFileSync(config.schemaFile, 'utf8');
-  await exec(schema);
+  const conn = await createConnection({ multipleStatements: true });
+  try {
+    // 建表脚本包含多条语句，需要 multipleStatements
+    await conn.query(schema);
 
-  // 预置 id=1 的单行配置；已存在则忽略
-  await run(
-    `INSERT OR IGNORE INTO system_config
-       (id, wx_pusher_title, ai_model, ai_temperature, ai_max_tokens, ai_prompt_template, boy_name, girl_name, default_style)
-     VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [DEFAULT_PUSH_TITLE, 'gpt-4o-mini', 0.8, 600, DEFAULT_PROMPT_TEMPLATE, '我', '宝贝', DEFAULT_STYLE]
-  );
+    // 预置 id=1 的单行配置；已存在则忽略
+    await conn.query(
+      `INSERT IGNORE INTO system_config
+         (id, wx_pusher_title, ai_model, ai_temperature, ai_max_tokens, ai_prompt_template, boy_name, girl_name, default_style)
+       VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [DEFAULT_PUSH_TITLE, 'gpt-4o-mini', 0.8, 600, DEFAULT_PROMPT_TEMPLATE, '我', '宝贝', DEFAULT_STYLE]
+    );
 
-  // 老库升级：Prompt 模板为空时补默认模板
-  await run(
-    `UPDATE system_config
-        SET ai_prompt_template = ?
-      WHERE id = 1 AND (ai_prompt_template IS NULL OR ai_prompt_template = '')`,
-    [DEFAULT_PROMPT_TEMPLATE]
-  );
+    // 老库升级：Prompt 模板为空时补默认模板
+    await conn.query(
+      `UPDATE system_config
+          SET ai_prompt_template = ?
+        WHERE id = 1 AND (ai_prompt_template IS NULL OR ai_prompt_template = '')`,
+      [DEFAULT_PROMPT_TEMPLATE]
+    );
+  } finally {
+    await conn.end();
+  }
 
-  logger.info('数据库初始化完成：' + config.dbPath);
+  logger.info(`数据库初始化完成：${config.mysql.host}:${config.mysql.port}/${config.mysql.database}`);
 }
 
 /**
@@ -154,4 +253,17 @@ async function getConfigRow() {
   };
 }
 
-module.exports = { getDb, run, get, all, exec, initDatabase, getConfigRow, closeDb, resetDbConnection };
+module.exports = {
+  getDb,
+  query,
+  run,
+  get,
+  all,
+  createConnection,
+  testConnection,
+  ensureDatabase,
+  initDatabase,
+  getConfigRow,
+  closeDb,
+  resetDbConnection,
+};
