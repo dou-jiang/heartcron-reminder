@@ -17,6 +17,19 @@ const { DEFAULT_PUSH_TITLE, DEFAULT_STYLE } = require('../config/constants');
 let pool = null;
 
 /**
+ * 新增字段迁移表：老版本数据库升级时按需补齐列（幂等，已存在则跳过）
+ * 格式：[表名, 列名, 列定义]
+ */
+const COLUMN_MIGRATIONS = [
+  ['system_config', 'push_mode', "VARCHAR(16) NOT NULL DEFAULT 'ai' COMMENT '推送内容模式：ai=大模型生成，template=固定模板'"],
+  ['system_config', 'push_template', "TEXT NULL COMMENT '固定模板内容，支持 {{变量}} 与 {{变量.DATA}} 写法'"],
+  ['system_config', 'love_start_date', "VARCHAR(10) NOT NULL DEFAULT '' COMMENT '相恋开始日期 YYYY-MM-DD'"],
+  ['system_config', 'birthday', "VARCHAR(10) NOT NULL DEFAULT '' COMMENT '生日，YYYY-MM-DD 或 MM-DD'"],
+  ['system_config', 'pay_day', "TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '每月发薪日 1~31，0=未设置'"],
+  ['system_config', 'love_message', "TEXT NULL COMMENT '每日一句集合，每行一条'"],
+];
+
+/**
  * 组装 mysql2 连接参数
  * @param {Object} [overrides] 覆盖项（安装向导测试连接时使用）
  * @returns {Object}
@@ -205,6 +218,9 @@ async function initDatabase() {
     // 建表脚本包含多条语句，需要 multipleStatements
     await conn.query(schema);
 
+    // 老库升级：补齐新增字段
+    await migrateColumns(conn);
+
     // 预置 id=1 的单行配置；已存在则忽略
     await conn.query(
       `INSERT IGNORE INTO system_config
@@ -225,6 +241,27 @@ async function initDatabase() {
   }
 
   logger.info(`数据库初始化完成：${config.mysql.host}:${config.mysql.port}/${config.mysql.database}`);
+}
+
+/**
+ * 按 COLUMN_MIGRATIONS 补齐缺失字段，保证老版本数据库也能平滑升级
+ * @param {import('mysql2/promise').Connection} conn
+ * @returns {Promise<void>}
+ */
+async function migrateColumns(conn) {
+  for (const [table, column, ddl] of COLUMN_MIGRATIONS) {
+    // eslint-disable-next-line no-await-in-loop
+    const [rows] = await conn.query(
+      `SELECT COUNT(*) AS total FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
+      [config.mysql.database, table, column]
+    );
+    if (Number(rows[0].total) === 0) {
+      // eslint-disable-next-line no-await-in-loop
+      await conn.query(`ALTER TABLE \`${table}\` ADD COLUMN \`${column}\` ${ddl}`);
+      logger.info(`数据库迁移：已为 ${table} 补齐字段 ${column}`);
+    }
+  }
 }
 
 /**
@@ -250,6 +287,12 @@ async function getConfigRow() {
     boy_name: '我',
     girl_name: '宝贝',
     default_style: DEFAULT_STYLE,
+    push_mode: 'ai',
+    push_template: '',
+    love_start_date: '',
+    birthday: '',
+    pay_day: 0,
+    love_message: '',
   };
 }
 

@@ -3,7 +3,10 @@
     <el-card class="hc-card hc-hero" shadow="never">
       <div class="hc-hero__text">
         <h2>Cron调度时间，心意准时抵达。</h2>
-        <p>HeartCron 会在设定时间收集天气、纪念日与待办，调用大模型生成专属关心文案，再通过 WxPusher 推送到微信。</p>
+        <p>
+          HeartCron 会在设定时间收集天气、纪念日与待办，按你选的内容模式（大模型生成 / 固定模板）生成专属关心文案，
+          再通过 WxPusher 推送到微信。
+        </p>
       </div>
       <el-button type="primary" :loading="pushing" @click="handleTestPush">
         <el-icon><Promotion /></el-icon>
@@ -38,6 +41,12 @@
             <el-descriptions-item label="今日待办">{{ preview.todo_list || '-' }}</el-descriptions-item>
             <el-descriptions-item label="推送时段">{{ preview.push_time_period || '-' }}</el-descriptions-item>
             <el-descriptions-item label="文案风格">{{ preview.style_type || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="内容模式">
+              {{ preview.push_mode === 'template' ? '固定模板' : 'AI 生成' }}
+            </el-descriptions-item>
+            <el-descriptions-item v-if="preview.push_mode === 'template'" label="模板预览">
+              <pre class="hc-preview-text">{{ preview.preview_content || '-' }}</pre>
+            </el-descriptions-item>
           </el-descriptions>
         </el-card>
       </el-col>
@@ -192,5 +201,14 @@ onMounted(loadPreview);
   align-items: center;
   justify-content: space-between;
   font-weight: 600;
+}
+
+.hc-preview-text {
+  margin: 0;
+  font-family: 'JetBrains Mono', Consolas, Monaco, monospace;
+  font-size: 12px;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 </style>

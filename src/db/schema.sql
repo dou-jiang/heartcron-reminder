@@ -9,6 +9,8 @@ CREATE TABLE IF NOT EXISTS system_config (
   wx_pusher_apptoken VARCHAR(255) NOT NULL DEFAULT '' COMMENT 'WxPusher AppToken',
   wx_pusher_uid      VARCHAR(500) NOT NULL DEFAULT '' COMMENT 'WxPusher 接收用户 UID，多个用逗号分隔',
   wx_pusher_title    VARCHAR(255) NOT NULL DEFAULT 'HeartCron 心时 · 今日份关心' COMMENT '推送消息标题模板',
+  push_mode          VARCHAR(16)  NOT NULL DEFAULT 'ai' COMMENT '推送内容模式：ai=大模型生成，template=固定模板',
+  push_template      TEXT         NULL COMMENT '固定模板内容，支持 {{变量}} 与 {{变量.DATA}} 写法',
   qweather_key       VARCHAR(255) NOT NULL DEFAULT '' COMMENT '和风天气 Key',
   qweather_city_id   VARCHAR(64)  NOT NULL DEFAULT '' COMMENT '和风天气城市 ID',
   ai_api_url         VARCHAR(500) NOT NULL DEFAULT '' COMMENT '大模型接口地址（OpenAI 兼容）',
@@ -20,6 +22,10 @@ CREATE TABLE IF NOT EXISTS system_config (
   boy_name           VARCHAR(64)  NOT NULL DEFAULT '我' COMMENT '男方昵称',
   girl_name          VARCHAR(64)  NOT NULL DEFAULT '宝贝' COMMENT '女方昵称',
   default_style      VARCHAR(32)  NOT NULL DEFAULT '温柔治愈' COMMENT '默认文案风格',
+  love_start_date    VARCHAR(10)  NOT NULL DEFAULT '' COMMENT '相恋开始日期 YYYY-MM-DD，用于 {{love}} / {{anniversary}}',
+  birthday           VARCHAR(10)  NOT NULL DEFAULT '' COMMENT '生日，YYYY-MM-DD 或 MM-DD，用于 {{birthday}} / {{individual}}',
+  pay_day            TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '每月发薪日 1~31，0=未设置，用于 {{pay}}',
+  love_message       TEXT         NULL COMMENT '每日一句集合，每行一条，用于 {{message}}',
   PRIMARY KEY (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='系统全局配置';
 

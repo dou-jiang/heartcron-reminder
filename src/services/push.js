@@ -1,5 +1,5 @@
 /**
- * 推送主链路：读取配置 → 天气 → 纪念日 → 待办 → AI 生成文案 → WxPusher 推送 → 写入日志
+ * 推送主链路：读取配置 → 天气 → 纪念日 → 待办 → 生成文案（AI 或固定模板） → WxPusher 推送 → 写入日志
  * 定时任务与【一键测试推送】共用本模块，保证两条路径逻辑完全一致
  */
 const { all, run, getConfigRow } = require('../db');
@@ -7,11 +7,12 @@ const { getWeather } = require('./weather');
 const { getAIMessage } = require('./ai');
 const { sendWxPusher } = require('./wxpusher');
 const { renderPromptTemplate } = require('./prompt');
+const { buildFixedVars, renderFixedTemplate } = require('./template');
 const { calcAnniversaryList, EMPTY_ANNIVERSARY_TEXT } = require('./anniversary');
 const { getTodoList, EMPTY_TODO_TEXT } = require('./todo');
 const { formatDateCN, formatDateTime } = require('../utils/date');
 const { DEFAULT_PROMPT_TEMPLATE, FALLBACK_ENDINGS, FALLBACK_WEATHER_EMPTY } = require('../config/defaultPrompt');
-const { DEFAULT_PUSH_TITLE, DEFAULT_STYLE } = require('../config/constants');
+const { DEFAULT_PUSH_TITLE, DEFAULT_STYLE, DEFAULT_PUSH_MODE } = require('../config/constants');
 const logger = require('../utils/logger');
 
 /**
@@ -107,7 +108,7 @@ async function savePushLog(log) {
  * @param {string} [options.period] 推送时段
  * @param {string} [options.styleType] 文案风格（默认取系统配置）
  * @param {string} [options.source] 触发来源：schedule=定时任务，manual=一键测试
- * @returns {Promise<{success:boolean, content:string, weatherInfo:string, errorMsg:string, createTime:string, source:string}>}
+ * @returns {Promise<{success:boolean, content:string, weatherInfo:string, errorMsg:string, createTime:string, source:string, mode:string}>}
  */
 async function runPushFlow({ taskId = null, period = '', styleType = '', source = 'schedule' } = {}) {
   const createTime = formatDateTime();
@@ -118,6 +119,7 @@ async function runPushFlow({ taskId = null, period = '', styleType = '', source 
     errorMsg: '',
     createTime,
     source,
+    mode: DEFAULT_PUSH_MODE,
     taskId: taskId === undefined ? null : taskId,
   };
 
@@ -128,20 +130,28 @@ async function runPushFlow({ taskId = null, period = '', styleType = '', source 
     if (!cfg.wx_pusher_apptoken) throw new Error('未配置 WxPusher AppToken，请先到「全局配置」填写并保存');
     if (!cfg.wx_pusher_uid) throw new Error('未配置 WxPusher UID，请先到「全局配置」填写并保存');
 
-    const { data, weatherInfo } = await collectPromptData({ period, styleType, cfg });
+    const { data, weatherInfo, weatherRaw } = await collectPromptData({ period, styleType, cfg });
     result.weatherInfo = weatherInfo;
 
-    const promptTemplate = cfg.ai_prompt_template || DEFAULT_PROMPT_TEMPLATE;
-    const fullPrompt = renderPromptTemplate(promptTemplate, data);
+    const mode = cfg.push_mode === 'template' ? 'template' : DEFAULT_PUSH_MODE;
+    result.mode = mode;
 
-    // AI 调用失败时使用内置备用文案兜底，保证推送不空白
     let aiFailedReason = '';
-    try {
-      result.content = await getAIMessage(cfg, fullPrompt);
-    } catch (err) {
-      aiFailedReason = err.message;
-      logger.warn('AI 文案生成失败，使用备用文案兜底：' + err.message);
-      result.content = pickFallbackContent(data);
+    if (mode === 'template') {
+      // 固定模板模式：不调用大模型，直接用真实数据渲染模板
+      result.content = renderFixedTemplate(cfg.push_template, buildFixedVars({ cfg, data, weatherRaw }));
+    } else {
+      const promptTemplate = cfg.ai_prompt_template || DEFAULT_PROMPT_TEMPLATE;
+      const fullPrompt = renderPromptTemplate(promptTemplate, data);
+
+      // AI 调用失败时使用内置备用文案兜底，保证推送不空白
+      try {
+        result.content = await getAIMessage(cfg, fullPrompt);
+      } catch (err) {
+        aiFailedReason = err.message;
+        logger.warn('AI 文案生成失败，使用备用文案兜底：' + err.message);
+        result.content = pickFallbackContent(data);
+      }
     }
 
     const title = renderPromptTemplate(cfg.wx_pusher_title || DEFAULT_PUSH_TITLE, data);

@@ -81,6 +81,46 @@
       </el-card>
 
       <el-card class="hc-card" shadow="never">
+        <template #header>
+          <div class="hc-card__header">
+            <span class="hc-section-title">推送内容模式</span>
+            <span class="hc-muted">固定模板模式下不调用大模型，文案由模板 + 真实数据直接拼出</span>
+          </div>
+        </template>
+        <el-form-item label="内容来源" prop="push_mode">
+          <el-radio-group v-model="form.push_mode">
+            <el-radio-button v-for="item in options.pushModes" :key="item.value" :label="item.value">
+              {{ item.label }}
+            </el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+
+        <template v-if="form.push_mode === 'template'">
+          <el-form-item label="模板内容" prop="push_template">
+            <el-input
+              v-model="form.push_template"
+              type="textarea"
+              :rows="12"
+              class="hc-prompt"
+              placeholder="支持 {{变量}} 与 {{变量.DATA}} 两种写法"
+            />
+          </el-form-item>
+          <el-form-item label="插入示例模板">
+            <div class="hc-samples">
+              <el-button v-for="item in options.templateSamples" :key="item.key" @click="form.push_template = item.content">
+                {{ item.name }}
+              </el-button>
+              <div class="hc-muted">点击即覆盖当前模板内容，可再自行修改</div>
+            </div>
+          </el-form-item>
+          <div class="hc-vars">
+            <span class="hc-muted">可用变量：</span>
+            <el-tag v-for="item in templateVarList" :key="item" size="small" effect="plain" class="hc-var-tag">{{ item }}</el-tag>
+          </div>
+        </template>
+      </el-card>
+
+      <el-card class="hc-card" shadow="never">
         <template #header><span class="hc-section-title">基础信息</span></template>
         <el-form-item label="男方昵称" prop="boy_name">
           <el-input v-model="form.boy_name" placeholder="男方昵称" />
@@ -94,6 +134,36 @@
           <el-select v-model="form.default_style" class="hc-select">
             <el-option v-for="item in options.styleTypes" :key="item" :label="item" :value="item" />
           </el-select>
+        </el-form-item>
+        <el-form-item label="相恋开始日期">
+          <el-date-picker
+            v-model="form.love_start_date"
+            type="date"
+            value-format="YYYY-MM-DD"
+            placeholder="例如 2023-05-20"
+          />
+          <div class="hc-muted">
+            对应 <code v-pre>{{love}}</code>（相恋第几天）与 <code v-pre>{{anniversary}}</code>（周年数）
+          </div>
+        </el-form-item>
+        <el-form-item label="生日">
+          <el-date-picker v-model="form.birthday" type="date" value-format="YYYY-MM-DD" placeholder="例如 1998-08-08" />
+          <div class="hc-muted">
+            对应 <code v-pre>{{birthday}}</code>（倒计时天数）与 <code v-pre>{{individual}}</code>（人生中的第几个生日）
+          </div>
+        </el-form-item>
+        <el-form-item label="每月发薪日">
+          <el-input-number v-model="form.pay_day" :min="0" :max="31" />
+          <div class="hc-muted">对应 <code v-pre>{{pay}}</code>（距离发薪日还有几天），填 0 表示不启用</div>
+        </el-form-item>
+        <el-form-item label="每日一句">
+          <el-input
+            v-model="form.love_message"
+            type="textarea"
+            :rows="5"
+            placeholder="每行一条，推送时随机取一条"
+          />
+          <div class="hc-muted">对应 <code v-pre>{{message}}</code></div>
         </el-form-item>
       </el-card>
     </el-form>
@@ -150,13 +220,33 @@ const variableList = [
   '{{style_type}}',
 ];
 
+/** 固定模板模式可用变量（{{变量}} 与 {{变量.DATA}} 两种写法等价） */
+const templateVarList = [
+  '{{dateTime}}',
+  '{{love}}',
+  '{{anniversary}}',
+  '{{birthday}}',
+  '{{individual}}',
+  '{{pay}}',
+  '{{weather}}',
+  '{{temp}}',
+  '{{humidity}}',
+  '{{wind}}',
+  '{{city}}',
+  '{{message}}',
+  '{{todo_list}}',
+  '{{anniversary_list}}',
+  '{{boy_name}}',
+  '{{girl_name}}',
+];
+
 const formRef = ref(null);
 const loading = ref(false);
 const saving = ref(false);
 const pushing = ref(false);
 const dialogVisible = ref(false);
 const pushResult = ref(null);
-const options = reactive({ styleTypes: [] });
+const options = reactive({ styleTypes: [], pushModes: [], templateSamples: [] });
 const configured = reactive({ wx_pusher_apptoken: false, qweather_key: false, ai_api_key: false });
 
 const form = reactive({
@@ -174,16 +264,49 @@ const form = reactive({
   boy_name: '',
   girl_name: '',
   default_style: '温柔治愈',
+  push_mode: 'ai',
+  push_template: '',
+  love_start_date: '',
+  birthday: '',
+  pay_day: 0,
+  love_message: '',
 });
+
+/** AI 相关字段在「固定模板」模式下不再必填 */
+function requiredInAiMode(message) {
+  return {
+    validator: (rule, value, callback) => {
+      if (form.push_mode === 'ai' && !String(value || '').trim()) {
+        callback(new Error(message));
+        return;
+      }
+      callback();
+    },
+    trigger: 'blur',
+  };
+}
 
 const rules = {
   wx_pusher_uid: [{ required: true, message: '请填写 WxPusher 接收 UID', trigger: 'blur' }],
   wx_pusher_title: [{ required: true, message: '请填写推送消息标题模板', trigger: 'blur' }],
-  ai_api_url: [{ required: true, message: '请填写大模型接口地址', trigger: 'blur' }],
-  ai_model: [{ required: true, message: '请填写模型名称', trigger: 'blur' }],
-  ai_prompt_template: [{ required: true, message: '请填写 Prompt 模板', trigger: 'blur' }],
+  ai_api_url: [requiredInAiMode('请填写大模型接口地址')],
+  ai_model: [requiredInAiMode('请填写模型名称')],
+  ai_prompt_template: [requiredInAiMode('请填写 Prompt 模板')],
   boy_name: [{ required: true, message: '请填写男方昵称', trigger: 'blur' }],
   girl_name: [{ required: true, message: '请填写女方昵称', trigger: 'blur' }],
+  push_mode: [{ required: true, message: '请选择推送内容模式', trigger: 'change' }],
+  push_template: [
+    {
+      validator: (rule, value, callback) => {
+        if (form.push_mode === 'template' && !String(value || '').trim()) {
+          callback(new Error('固定模板模式下请填写模板内容'));
+          return;
+        }
+        callback();
+      },
+      trigger: 'blur',
+    },
+  ],
 };
 
 /**
@@ -195,6 +318,13 @@ async function loadConfig() {
     const data = await apiGetConfig();
     Object.assign(form, data.config);
     Object.assign(options, data.options);
+    // 数据库里可能为 NULL / 空，统一成表单友好的默认值
+    form.push_mode = data.config.push_mode === 'template' ? 'template' : 'ai';
+    form.push_template = data.config.push_template || '';
+    form.love_start_date = data.config.love_start_date || '';
+    form.birthday = data.config.birthday || '';
+    form.pay_day = Number(data.config.pay_day || 0);
+    form.love_message = data.config.love_message || '';
     configured.wx_pusher_apptoken = Boolean(data.config.wx_pusher_apptoken_configured);
     configured.qweather_key = Boolean(data.config.qweather_key_configured);
     configured.ai_api_key = Boolean(data.config.ai_api_key_configured);
@@ -274,5 +404,16 @@ onMounted(loadConfig);
 
 .hc-var-tag {
   font-family: 'JetBrains Mono', Consolas, Monaco, monospace;
+}
+
+.hc-samples {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.hc-samples .hc-muted {
+  flex-basis: 100%;
 }
 </style>

@@ -9,7 +9,9 @@ const config = require('../config');
 const { runPushFlow, collectPromptData } = require('../services/push');
 const { getJobCount } = require('../services/scheduler');
 const { get, all } = require('../db');
-const { PUSH_TIME_PERIODS, STYLE_TYPES } = require('../config/constants');
+const { PUSH_TIME_PERIODS, STYLE_TYPES, PUSH_MODES, DEFAULT_PUSH_TITLE, DEFAULT_PUSH_MODE } = require('../config/constants');
+const { buildFixedVars, renderFixedTemplate } = require('../services/template');
+const { renderPromptTemplate } = require('../services/prompt');
 const asyncHandler = require('../utils/asyncHandler');
 
 const router = express.Router();
@@ -26,6 +28,7 @@ router.get(
         timezone: config.timezone,
         pushTimePeriods: PUSH_TIME_PERIODS,
         styleTypes: STYLE_TYPES,
+        pushModes: PUSH_MODES,
         runningJobs: getJobCount(),
         now: new Date().toISOString(),
       },
@@ -59,7 +62,11 @@ router.post(
 router.get(
   '/preview',
   asyncHandler(async (req, res) => {
-    const { data } = await collectPromptData({ period: '', styleType: '' });
+    const { cfg, data, weatherRaw } = await collectPromptData({ period: '', styleType: '' });
+    const pushMode = cfg.push_mode === 'template' ? 'template' : DEFAULT_PUSH_MODE;
+    // 固定模板模式下顺便渲染一份预览，方便仪表盘直接看到最终推送内容
+    const previewContent =
+      pushMode === 'template' ? renderFixedTemplate(cfg.push_template, buildFixedVars({ cfg, data, weatherRaw })) : '';
     const taskRow = await get('SELECT COUNT(*) AS total FROM remind_task');
     const enableTaskRow = await get('SELECT COUNT(*) AS total FROM remind_task WHERE enable = 1');
     const anniversaryRow = await get('SELECT COUNT(*) AS total FROM anniversary WHERE enable = 1');
@@ -70,6 +77,9 @@ router.get(
       success: true,
       data: {
         ...data,
+        push_mode: pushMode,
+        preview_title: renderPromptTemplate(cfg.wx_pusher_title || DEFAULT_PUSH_TITLE, data),
+        preview_content: previewContent,
         stats: {
           taskTotal: taskRow ? taskRow.total : 0,
           taskEnabled: enableTaskRow ? enableTaskRow.total : 0,

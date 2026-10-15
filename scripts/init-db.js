@@ -5,7 +5,7 @@
  */
 const config = require('../src/config');
 const logger = require('../src/utils/logger');
-const { ensureDatabase, initDatabase, getConfigRow, all } = require('../src/db');
+const { ensureDatabase, initDatabase, getConfigRow, all, closeDb } = require('../src/db');
 
 (async function main() {
   const created = await ensureDatabase();
@@ -28,7 +28,9 @@ const { ensureDatabase, initDatabase, getConfigRow, all } = require('../src/db')
   console.log('已有待办事项 ：' + todoCount + ' 条');
   console.log('');
   console.log('下一步：npm start 启动服务，登录后台填写密钥与任务配置。');
+  // 关闭连接池，否则脚本会一直等待连接而不退出
+  await closeDb();
 })().catch((err) => {
   logger.error('数据库初始化失败：' + (err && err.stack ? err.stack : err));
-  process.exit(1);
+  closeDb().finally(() => process.exit(1));
 });

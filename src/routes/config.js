@@ -6,8 +6,17 @@
 const express = require('express');
 
 const { run, getConfigRow } = require('../db');
-const { CONFIG_FIELDS, SECRET_FIELDS, NUMBER_FIELDS, PUSH_TIME_PERIODS, STYLE_TYPES } = require('../config/constants');
+const {
+  CONFIG_FIELDS,
+  SECRET_FIELDS,
+  NUMBER_FIELDS,
+  PUSH_TIME_PERIODS,
+  STYLE_TYPES,
+  PUSH_MODES,
+} = require('../config/constants');
+const { TEMPLATE_SAMPLES } = require('../config/templateSamples');
 const { maskSecret, isMaskedValue } = require('../utils/mask');
+const { isValidDateStr } = require('../utils/date');
 const asyncHandler = require('../utils/asyncHandler');
 
 const router = express.Router();
@@ -58,9 +67,26 @@ function normalizeConfigPayload(body = {}) {
         errors.push('ai_max_tokens 取值范围为 1~100000');
         return;
       }
+      if (field === 'pay_day' && (!Number.isInteger(num) || num < 0 || num > 31)) {
+        errors.push('pay_day 需为 0~31 的整数（0 表示未设置发薪日）');
+        return;
+      }
       value = num;
     } else {
-      value = value === undefined || value === null ? '' : String(value);
+      value = value === undefined || value === null ? '' : String(value).trim();
+    }
+
+    if (field === 'push_mode' && !PUSH_MODES.some((item) => item.value === value)) {
+      errors.push(`push_mode 只能是：${PUSH_MODES.map((item) => item.value).join(' / ')}`);
+      return;
+    }
+    if (field === 'love_start_date' && value && !isValidDateStr(value)) {
+      errors.push('相恋开始日期格式应为 YYYY-MM-DD');
+      return;
+    }
+    if (field === 'birthday' && value && !isValidDateStr(value) && !/^\d{2}-\d{2}$/.test(value)) {
+      errors.push('生日格式应为 YYYY-MM-DD 或 MM-DD');
+      return;
     }
 
     fields.push(field);
@@ -78,7 +104,12 @@ router.get(
       success: true,
       data: {
         config: toSafeConfig(row),
-        options: { pushTimePeriods: PUSH_TIME_PERIODS, styleTypes: STYLE_TYPES },
+        options: {
+          pushTimePeriods: PUSH_TIME_PERIODS,
+          styleTypes: STYLE_TYPES,
+          pushModes: PUSH_MODES,
+          templateSamples: TEMPLATE_SAMPLES,
+        },
       },
     });
   })
