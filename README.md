@@ -2,7 +2,7 @@
 
 **Cron 调度时间，心意准时抵达。**
 
-一个可以直接上传到 PHP 网站的暖心提醒系统：自动获取天气、记住纪念日和待办，用固定模板或 AI 生成关心文案，通过 WxPusher 推送到微信。基于 Vitality-reminder 二次开发。
+一个可以直接上传到 PHP 网站的暖心提醒系统：自动获取天气、记住纪念日和待办，用固定模板或 AI 生成关心文案，通过 WxPusher 推送到微信。
 
 [![GitHub](https://img.shields.io/badge/GitHub-dou--jiang%2Fheartcron--reminder-181717?logo=github)](https://github.com/dou-jiang/heartcron-reminder)
 
