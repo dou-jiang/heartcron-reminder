@@ -24,6 +24,20 @@
       </el-col>
     </el-row>
 
+    <el-card v-if="preview.scheduler" class="hc-card" shadow="never" style="margin-bottom:16px">
+      <template #header>
+        <div class="hc-card__header">
+          <span>自动推送</span>
+          <el-tag :type="preview.scheduler.healthy ? 'success' : 'warning'">
+            {{ preview.scheduler.healthy ? '计划任务已连接' : '等待宝塔计划任务' }}
+          </el-tag>
+        </div>
+      </template>
+      <p>宝塔 → 计划任务 → Shell 脚本，执行周期选「每分钟」，粘贴下面的命令并保存。只需设置一次。</p>
+      <el-input :model-value="preview.scheduler.command" readonly aria-label="宝塔计划任务命令" @focus="event => event.target.select()" />
+      <p class="hc-muted">上次检测：{{ preview.scheduler.lastRun ? formatDateTime(preview.scheduler.lastRun) : '尚未运行' }}。保存后等待一分钟，点击「刷新」查看连接状态。PHP 路径需与服务器已安装的版本一致。</p>
+    </el-card>
+
     <el-row :gutter="16">
       <el-col :xs="24" :md="12">
         <el-card class="hc-card" shadow="never">
@@ -92,7 +106,7 @@ import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 
 import { apiGetPreview, apiTestPush } from '@/api';
-import { truncate } from '@/utils/format';
+import { truncate, formatDateTime } from '@/utils/format';
 import PushResultDialog from '@/components/PushResultDialog.vue';
 
 const router = useRouter();
@@ -106,7 +120,7 @@ const statCards = computed(() => {
   const stats = preview.value.stats || {};
   return [
     { label: '启用定时任务', value: `${stats.taskEnabled ?? 0} / ${stats.taskTotal ?? 0}`, extra: '已启用 / 全部' },
-    { label: '已注册调度', value: stats.runningJobs ?? 0, extra: '运行中的 cron 任务' },
+    { label: '可执行调度', value: stats.runningJobs ?? 0, extra: '已连接的定时任务' },
     { label: '启用纪念日', value: stats.anniversaryEnabled ?? 0, extra: '参与文案生成' },
     { label: '启用待办', value: stats.todoEnabled ?? 0, extra: '参与文案生成' },
   ];

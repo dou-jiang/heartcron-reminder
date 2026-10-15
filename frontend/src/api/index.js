@@ -5,16 +5,37 @@
 import axios from 'axios';
 import { ElMessage } from 'element-plus';
 
-import { redirectToLogin } from '@/utils/auth';
+import { authState, redirectToLogin } from '@/utils/auth';
 
+const isPhpSite = Boolean(window.HEARTCRON_PHP);
 const http = axios.create({
-  baseURL: '/api',
-  timeout: 60000,
+  baseURL: isPhpSite ? '' : '/api',
+  timeout: 120000,
   withCredentials: true,
+});
+
+let csrfRequest;
+http.interceptors.request.use(async (config) => {
+  if (isPhpSite) {
+    config.heartcronRoute = config.url;
+    config.params = { ...config.params, route: config.url };
+    config.url = './api.php';
+    if (!['get', 'head', 'options'].includes(String(config.method || 'get').toLowerCase())) {
+      if (!authState.csrfToken) {
+        csrfRequest ||= axios.get('./api.php', { params: { route: 'session' }, withCredentials: true })
+          .then(({ data }) => { authState.csrfToken = data.data.csrfToken; })
+          .finally(() => { csrfRequest = null; });
+        await csrfRequest;
+      }
+      config.headers['X-CSRF-Token'] = authState.csrfToken;
+    }
+  }
+  return config;
 });
 
 http.interceptors.response.use(
   (response) => {
+    if (isPhpSite && response.headers['x-csrf-token']) authState.csrfToken = response.headers['x-csrf-token'];
     const payload = response.data;
     if (payload && payload.success === false) {
       const message = payload.message || '请求失败';
@@ -27,7 +48,7 @@ http.interceptors.response.use(
     const status = error.response && error.response.status;
     const message = (error.response && error.response.data && error.response.data.message) || error.message || '网络请求失败';
 
-    if (status === 401) {
+    if (status === 401 && (error.config.heartcronRoute || error.config.url) !== '/login') {
       redirectToLogin();
       return Promise.reject(new Error(message));
     }

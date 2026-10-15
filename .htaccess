@@ -1,0 +1,3 @@
+DirectoryIndex index.php
+Options -Indexes
+# PHP uses query-string APIs and hash navigation, so no URL rewriting is required.

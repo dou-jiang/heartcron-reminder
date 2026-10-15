@@ -43,6 +43,10 @@
           <el-input v-model="form.qweather_city_id" placeholder="例如 101230101" />
           <div class="hc-muted">可在和风天气控制台「城市查询」中获取 Location ID</div>
         </el-form-item>
+        <el-form-item label="API Host" prop="qweather_host">
+          <el-input v-model="form.qweather_host" placeholder="例如 abc123.qweatherapi.com" />
+          <div class="hc-muted">填写和风天气控制台提供的 API Host，不包含路径</div>
+        </el-form-item>
       </el-card>
 
       <el-card class="hc-card" shadow="never">
@@ -255,6 +259,7 @@ const form = reactive({
   wx_pusher_title: '',
   qweather_key: '',
   qweather_city_id: '',
+  qweather_host: '',
   ai_api_url: '',
   ai_api_key: '',
   ai_model: '',
@@ -325,6 +330,7 @@ async function loadConfig() {
     form.birthday = data.config.birthday || '';
     form.pay_day = Number(data.config.pay_day || 0);
     form.love_message = data.config.love_message || '';
+    form.qweather_host = data.config.qweather_host || '';
     configured.wx_pusher_apptoken = Boolean(data.config.wx_pusher_apptoken_configured);
     configured.qweather_key = Boolean(data.config.qweather_key_configured);
     configured.ai_api_key = Boolean(data.config.ai_api_key_configured);

@@ -30,7 +30,7 @@
         </el-button>
       </el-form>
 
-      <p class="hc-login__tip">账号密码保存在后端 .env 文件中，首次部署请及时修改</p>
+      <p class="hc-login__tip">账号密码仅保存在服务器配置中，请妥善保管</p>
     </div>
   </div>
 </template>
@@ -72,6 +72,7 @@ async function handleSubmit() {
     authState.checked = true;
     authState.loggedIn = true;
     authState.username = data.username;
+    authState.csrfToken = data.csrfToken || '';
     ElMessage.success('登录成功');
     router.replace(route.query.redirect || '/dashboard');
   } catch (err) {

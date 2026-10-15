@@ -2,7 +2,7 @@
  * 路由配置：登录页 + 后台管理页面
  * 全局前置守卫统一校验登录态，未登录跳转 /login
  */
-import { createRouter, createWebHistory } from 'vue-router';
+import { createRouter, createWebHistory, createWebHashHistory } from 'vue-router';
 
 import { apiSession } from '@/api';
 import { authState } from '@/utils/auth';
@@ -61,7 +61,7 @@ const routes = [
 ];
 
 const router = createRouter({
-  history: createWebHistory(),
+  history: window.HEARTCRON_PHP ? createWebHashHistory() : createWebHistory(),
   routes,
 });
 
@@ -74,6 +74,7 @@ router.beforeEach(async (to) => {
       authState.checked = true;
       authState.loggedIn = Boolean(session && session.loggedIn);
       authState.username = (session && session.username) || '';
+      authState.csrfToken = (session && session.csrfToken) || '';
     } catch (err) {
       authState.checked = true;
       authState.loggedIn = false;

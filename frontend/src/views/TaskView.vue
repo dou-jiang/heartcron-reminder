@@ -4,7 +4,7 @@
       <div>
         <div class="hc-toolbar__title">定时任务</div>
         <div class="hc-toolbar__desc">
-          cron 表达式使用标准 6 位格式（秒 分 时 日 月 周），任务变更后服务会自动重新加载全部调度
+          cron 格式为 秒 分 时 日 月 周。{{ isPhpSite ? '秒位固定为 0，按分钟执行；请先在仪表盘连接宝塔计划任务。' : '任务变更后自动重新加载调度。' }}
         </div>
       </div>
       <el-button type="primary" @click="openDialog()">
@@ -21,6 +21,7 @@
           <template #default="{ row }">
             <div class="hc-mono">{{ row.cron_expr }}</div>
             <div class="hc-muted">{{ describeCron(row.cron_expr) }}</div>
+            <div v-if="row.schedule_error" class="hc-muted" style="color:#d94d79">{{ row.schedule_error }}</div>
           </template>
         </el-table-column>
         <el-table-column label="下次执行" width="170">
@@ -82,6 +83,7 @@ import { formatDateTime } from '@/utils/format';
 import CronPicker from '@/components/CronPicker.vue';
 
 const loading = ref(false);
+const isPhpSite = Boolean(window.HEARTCRON_PHP);
 const saving = ref(false);
 const dialogVisible = ref(false);
 const list = ref([]);
@@ -105,6 +107,7 @@ const rules = {
     {
       validator: (rule, value, callback) => {
         if (!value || !validateCron(value)) callback(new Error('cron 表达式不合法，请使用标准 6 位格式'));
+        else if (isPhpSite && String(value).trim().split(/\s+/)[0] !== '0') callback(new Error('PHP 版按分钟执行，秒位必须为 0'));
         else callback();
       },
       trigger: 'change',

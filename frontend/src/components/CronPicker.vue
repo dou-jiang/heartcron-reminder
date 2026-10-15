@@ -17,7 +17,7 @@
     </div>
 
     <el-tabs v-model="activeField" class="hc-cron__tabs">
-      <el-tab-pane v-for="(field, index) in CRON_FIELDS" :key="field.key" :label="field.label" :name="field.key">
+      <el-tab-pane v-for="(field, index) in CRON_FIELDS" :key="field.key" :label="field.label" :name="field.key" :disabled="isPhpSite && field.key === 'second'">
         <el-radio-group v-model="fieldStates[index].mode" size="small" @change="syncFromState">
           <el-radio-button value="every">每{{ field.label }}</el-radio-button>
           <el-radio-button value="specific">指定</el-radio-button>
@@ -85,12 +85,13 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue']);
 
-const activeField = ref('second');
+const isPhpSite = Boolean(window.HEARTCRON_PHP);
+const activeField = ref(isPhpSite ? 'minute' : 'second');
 const preset = ref('');
 const expression = ref(props.modelValue || buildCron(createDefaultFieldStates()));
 const fieldStates = ref(parseCron(expression.value) || createDefaultFieldStates());
 
-const valid = computed(() => validateCron(expression.value));
+const valid = computed(() => validateCron(expression.value) && (!isPhpSite || expression.value.trim().split(/\s+/)[0] === '0'));
 
 watch(
   () => props.modelValue,

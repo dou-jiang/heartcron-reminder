@@ -8,6 +8,7 @@ export const authState = reactive({
   checked: false,
   loggedIn: false,
   username: '',
+  csrfToken: '',
 });
 
 /**
@@ -16,7 +17,10 @@ export const authState = reactive({
 export function redirectToLogin() {
   authState.checked = true;
   authState.loggedIn = false;
-  if (window.location.pathname !== '/login') {
+  authState.csrfToken = '';
+  if (window.HEARTCRON_PHP) {
+    window.location.hash = '/login';
+  } else if (window.location.pathname !== '/login') {
     window.location.replace('/login');
   }
 }
