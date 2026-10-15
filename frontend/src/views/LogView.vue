@@ -3,7 +3,7 @@
     <div class="hc-toolbar">
       <div>
         <div class="hc-toolbar__title">推送日志</div>
-        <div class="hc-toolbar__desc">记录每一次推送的时间、天气、AI 文案与结果，便于排查问题</div>
+        <div class="hc-toolbar__desc">执行开始即记录日志，显示推送内容与结果；没有记录时请先检查计划任务连接状态</div>
       </div>
       <el-button @click="loadList">
         <el-icon><Refresh /></el-icon>
@@ -17,20 +17,23 @@
         <el-table-column label="关联任务" width="130">
           <template #default="{ row }">{{ row.task_name || '一键测试' }}</template>
         </el-table-column>
+        <el-table-column label="触发方式" width="100">
+          <template #default="{ row }">{{ row.source === 'schedule' ? '定时执行' : row.source === 'manual' ? '手动测试' : '-' }}</template>
+        </el-table-column>
         <el-table-column label="天气信息" min-width="180">
           <template #default="{ row }">
             <span class="hc-ellipsis" :title="row.weather_info">{{ truncate(row.weather_info, 24) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="AI 文案" min-width="240">
+        <el-table-column label="推送内容" min-width="240">
           <template #default="{ row }">
             <span class="hc-ellipsis" :title="row.ai_content">{{ truncate(row.ai_content, 34) }}</span>
           </template>
         </el-table-column>
         <el-table-column label="状态" width="90">
           <template #default="{ row }">
-            <el-tag :type="row.status === 1 ? 'success' : 'danger'" size="small" effect="plain">
-              {{ row.status === 1 ? '成功' : '失败' }}
+            <el-tag :type="row.status === 1 ? 'success' : row.status === 2 ? 'warning' : 'danger'" size="small" effect="plain">
+              {{ row.status === 1 ? '成功' : row.status === 2 ? '执行中' : '失败' }}
             </el-tag>
           </template>
         </el-table-column>
@@ -64,12 +67,13 @@
         <el-descriptions-item label="推送时间">{{ detail.create_time }}</el-descriptions-item>
         <el-descriptions-item label="关联任务">{{ detail.task_name || '一键测试推送' }}</el-descriptions-item>
         <el-descriptions-item label="推送状态">
-          <el-tag :type="detail.status === 1 ? 'success' : 'danger'" size="small" effect="plain">
-            {{ detail.status === 1 ? '成功' : '失败' }}
+          <el-tag :type="detail.status === 1 ? 'success' : detail.status === 2 ? 'warning' : 'danger'" size="small" effect="plain">
+            {{ detail.status === 1 ? '成功' : detail.status === 2 ? '执行中' : '失败' }}
           </el-tag>
         </el-descriptions-item>
         <el-descriptions-item label="天气信息">{{ detail.weather_info || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="AI 文案">
+        <el-descriptions-item label="消息标题">{{ detail.push_title || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="推送内容">
           <div class="hc-detail-text">{{ detail.ai_content || '-' }}</div>
         </el-descriptions-item>
         <el-descriptions-item label="错误信息">

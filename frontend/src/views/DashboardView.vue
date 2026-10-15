@@ -24,19 +24,7 @@
       </el-col>
     </el-row>
 
-    <el-card v-if="preview.scheduler" class="hc-card" shadow="never" style="margin-bottom:16px">
-      <template #header>
-        <div class="hc-card__header">
-          <span>自动推送</span>
-          <el-tag :type="preview.scheduler.healthy ? 'success' : 'warning'">
-            {{ preview.scheduler.healthy ? '计划任务已连接' : '等待宝塔计划任务' }}
-          </el-tag>
-        </div>
-      </template>
-      <p>宝塔 → 计划任务 → Shell 脚本，执行周期选「每分钟」，粘贴下面的命令并保存。只需设置一次。</p>
-      <el-input :model-value="preview.scheduler.command" readonly aria-label="宝塔计划任务命令" @focus="event => event.target.select()" />
-      <p class="hc-muted">上次检测：{{ preview.scheduler.lastRun ? formatDateTime(preview.scheduler.lastRun) : '尚未运行' }}。保存后等待一分钟，点击「刷新」查看连接状态。PHP 路径需与服务器已安装的版本一致。</p>
-    </el-card>
+    <SchedulerPanel v-if="isPhpSite" />
 
     <el-row :gutter="16">
       <el-col :xs="24" :md="12">
@@ -78,8 +66,8 @@
             <el-table-column prop="create_time" label="时间" width="150" />
             <el-table-column label="状态" width="80">
               <template #default="{ row }">
-                <el-tag :type="row.status === 1 ? 'success' : 'danger'" size="small" effect="plain">
-                  {{ row.status === 1 ? '成功' : '失败' }}
+                <el-tag :type="row.status === 1 ? 'success' : row.status === 2 ? 'warning' : 'danger'" size="small" effect="plain">
+                  {{ row.status === 1 ? '成功' : row.status === 2 ? '执行中' : '失败' }}
                 </el-tag>
               </template>
             </el-table-column>
@@ -108,8 +96,10 @@ import { ElMessage } from 'element-plus';
 import { apiGetPreview, apiTestPush } from '@/api';
 import { truncate, formatDateTime } from '@/utils/format';
 import PushResultDialog from '@/components/PushResultDialog.vue';
+import SchedulerPanel from '@/components/SchedulerPanel.vue';
 
 const router = useRouter();
+const isPhpSite = Boolean(window.HEARTCRON_PHP);
 const loading = ref(false);
 const pushing = ref(false);
 const preview = ref({});

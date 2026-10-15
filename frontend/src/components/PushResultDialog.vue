@@ -15,7 +15,7 @@
         <div class="hc-result__text">{{ result.weatherInfo || '-' }}</div>
       </div>
       <div class="hc-result__block">
-        <div class="hc-result__label">AI 生成文案</div>
+        <div class="hc-result__label">推送内容</div>
         <div class="hc-result__content">{{ result.content || '-' }}</div>
       </div>
       <div v-if="result.errorMsg" class="hc-result__block">

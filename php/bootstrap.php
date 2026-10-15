@@ -22,12 +22,23 @@ function hc_connect(array $db): PDO {
         throw new InvalidArgumentException('数据库主机、端口或库名格式不正确');
     }
     if (empty($db['user'])) throw new InvalidArgumentException('数据库账号不能为空');
-    return new PDO('mysql:host=' . $db['host'] . ';port=' . $db['port'] . ';dbname=' . $db['database'] . ';charset=utf8mb4',
+    $connection = new PDO('mysql:host=' . $db['host'] . ';port=' . $db['port'] . ';dbname=' . $db['database'] . ';charset=utf8mb4',
         $db['user'], $db['password'], [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC, PDO::ATTR_EMULATE_PREPARES => false,
         PDO::ATTR_TIMEOUT => 5]);
+    $connection->exec("SET time_zone = '+08:00'");
+    return $connection;
 }
-function hc_db(): PDO { static $db; return $db ?? ($db = hc_connect(hc_settings()['db'])); }
+function hc_db(): PDO {
+    static $db;
+    if ($db===null) {
+        $connection=hc_connect(hc_settings()['db']);
+        require_once __DIR__.'/migrations.php';
+        hc_migrate($connection);
+        $db=$connection;
+    }
+    return $db;
+}
 function hc_query(string $sql, array $args = []): PDOStatement {
     $stmt = hc_db()->prepare($sql);
     foreach (array_values($args) as $i => $value) {

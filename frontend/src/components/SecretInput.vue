@@ -51,11 +51,13 @@ watch(
 );
 
 let editing = false;
+let valueBeforeEdit = '';
 
 /**
  * 聚焦时：若当前是掩码值则清空，方便直接输入新密钥
  */
 function handleFocus() {
+  valueBeforeEdit = props.modelValue || '';
   editing = true;
   if (String(inner.value || '').includes('****')) {
     inner.value = '';
@@ -68,7 +70,7 @@ function handleFocus() {
 function handleBlur() {
   editing = false;
   if (!inner.value && props.configured) {
-    inner.value = props.modelValue || '';
+    inner.value = valueBeforeEdit;
     emit('update:modelValue', inner.value);
   }
 }

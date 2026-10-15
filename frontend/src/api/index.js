@@ -10,7 +10,7 @@ import { authState, redirectToLogin } from '@/utils/auth';
 const isPhpSite = Boolean(window.HEARTCRON_PHP);
 const http = axios.create({
   baseURL: isPhpSite ? '' : '/api',
-  timeout: 120000,
+  timeout: 240000,
   withCredentials: true,
 });
 
@@ -71,6 +71,9 @@ export const apiListTasks = () => http.get('/task');
 export const apiCreateTask = (data) => http.post('/task', data);
 export const apiUpdateTask = (id, data) => http.put(`/task/${id}`, data);
 export const apiDeleteTask = (id) => http.delete(`/task/${id}`);
+export const apiTaskPreview = (data) => http.post('/task-preview', data);
+export const apiGetScheduler = () => http.get('/scheduler');
+export const apiCheckScheduler = () => http.post('/scheduler/check', {});
 
 /* ---------------- 纪念日 ---------------- */
 export const apiListAnniversaries = () => http.get('/anniversary');
@@ -89,3 +92,4 @@ export const apiListLogs = (params) => http.get('/log', { params });
 export const apiGetMeta = () => http.get('/meta');
 export const apiGetPreview = () => http.get('/preview');
 export const apiTestPush = (data = {}) => http.post('/test-push', data);
+export const apiTestAi = (data = {}) => http.post('/test-ai', data);

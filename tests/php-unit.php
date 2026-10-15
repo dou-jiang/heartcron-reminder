@@ -5,6 +5,7 @@ define('HC_ROOT',dirname(__DIR__));
 require HC_ROOT.'/php/bootstrap.php';
 require HC_ROOT.'/php/cron.php';
 require HC_ROOT.'/php/services.php';
+require HC_ROOT.'/php/api.php';
 $count=0;
 function check($actual,$expected,string $label): void {
     global $count;
@@ -34,6 +35,35 @@ check(hc_cron_due(hc_cron_parse('0 0 9 15 * 1'),new DateTimeImmutable('2026-10-1
 check(hc_cron_due(hc_cron_parse('0 0 9 * * 7'),new DateTimeImmutable('2026-10-18 09:00:00')),true,'Sunday 7');
 foreach (['* * * * * *','1 0 9 * * *','0 70 9 * * *','0 30 9 * * 5-2','0 */0 * * * *','0 0 9 1-99 * *'] as $bad) {
     try { hc_cron_parse($bad); throw new RuntimeException('Accepted bad cron: '.$bad); }
+    catch (InvalidArgumentException $e) { $count++; }
+}
+$global=['push_mode'=>'ai','push_template'=>'global text','ai_prompt_template'=>'global prompt','wx_pusher_title'=>'global title','wx_pusher_uid'=>'UID_global','default_style'=>'温柔治愈'];
+check(hc_task_config($global,['push_mode'=>'inherit','push_template'=>'ignored'])['push_template'],'global text','Old tasks inherit global template');
+$custom=hc_task_config($global,['push_mode'=>'template','push_template'=>'喝水提醒','push_title'=>'喝水','wx_pusher_uid'=>'UID_water']);
+check($custom['push_mode'],'template','Independent task overrides AI global');
+check($custom['push_template'],'喝水提醒','Task text overrides global text');
+check($custom['wx_pusher_title'],'喝水','Task title');
+check($custom['wx_pusher_uid'],'UID_water','Task recipient');
+check(hc_task_config($global,['push_mode'=>'inherit','wx_pusher_uid'=>''])['wx_pusher_uid'],'UID_global','Blank recipient inherits');
+check(hc_task_config($global,['push_mode'=>'ai','ai_prompt_template'=>'学习计划'])['ai_prompt_template'],'学习计划','Independent AI prompt');
+$new=hc_task_fields(['task_name'=>'喝水','cron_expr'=>'*/10 * * * *','push_time_period'=>'喝水吃药','push_mode'=>'template','push_template'=>'照顾好自己']);
+check($new['push_time_period'],'喝水吃药','Custom reminder scene');
+check($new['cron_expr'],'0 */10 * * * *','Five fields normalized');
+check(hc_task_fields(['task_name'=>'old','cron_expr'=>'0 0 8 * * *'])['push_mode'],'inherit','Old task API compatible');
+foreach ([['push_mode'=>'invalid'],['push_mode'=>'template','push_template'=>' '],['push_mode'=>'ai','ai_prompt_template'=>''],['push_time_period'=>str_repeat('长',33)],['push_template'=>['invalid']]] as $fields) {
+    try { hc_task_fields($fields+['task_name'=>'bad','cron_expr'=>'0 0 8 * * *']); throw new RuntimeException('Accepted invalid task fields'); }
+    catch (InvalidArgumentException $e) { $count++; }
+}
+$tick=new DateTimeImmutable('2026-10-15 10:03:25');
+check(array_map(fn($d)=>$d->format('H:i'),hc_scheduler_minutes('2026-10-15T10:00:12+08:00',$tick)),['10:01','10:02','10:03'],'Recover delayed minutes');
+check(count(hc_scheduler_minutes('',$tick)),1,'First tick does not backfill');
+check(count(hc_scheduler_minutes('2026-10-15T09:00:00+08:00',$tick)),1,'Long outage does not flood');
+check(count(hc_scheduler_minutes('2026-10-15T10:04:00+08:00',$tick)),1,'Clock reversal');
+check(hc_ai_url(' https://example.test/v1/ '),'https://example.test/v1/chat/completions','AI base URL');
+check(hc_ai_url('https://example.test/v1/chat/completions/'),'https://example.test/v1/chat/completions','AI complete URL is not appended twice');
+check(hc_upstream_error(['error'=>['message'=>'invalid sk-test-secret Bearer other-secret https://api.test/private']],['sk-test-secret']),'invalid [已隐藏] Bearer [已隐藏] [接口地址]','AI error redacts secrets');
+foreach (['ftp://example.test','https://user:secret@example.test','https://example.test/v1?key=secret'] as $url) {
+    try { hc_ai_url($url); throw new RuntimeException('Accepted invalid AI URL'); }
     catch (InvalidArgumentException $e) { $count++; }
 }
 echo "Passed $count PHP assertions\n";

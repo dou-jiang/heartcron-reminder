@@ -50,9 +50,15 @@
       </el-card>
 
       <el-card class="hc-card" shadow="never">
-        <template #header><span class="hc-section-title">AI 大模型配置</span></template>
+        <template #header>
+          <div class="hc-card__header">
+            <span class="hc-section-title">AI 大模型配置</span>
+            <el-button v-if="isPhpSite" type="primary" :loading="testingAi" @click="handleTestAi">测试 AI</el-button>
+          </div>
+        </template>
         <el-form-item label="接口地址" prop="ai_api_url">
           <el-input v-model="form.ai_api_url" placeholder="https://api.openai.com/v1（兼容 OpenAI 格式）" />
+          <div class="hc-muted">支持基础地址或完整的 /chat/completions 地址</div>
         </el-form-item>
         <el-form-item label="API Key" prop="ai_api_key">
           <SecretInput v-model="form.ai_api_key" :configured="configured.ai_api_key" placeholder="sk-..." />
@@ -66,6 +72,13 @@
         <el-form-item label="最大输出 token">
           <el-input-number v-model="form.ai_max_tokens" :min="1" :max="100000" :step="50" />
         </el-form-item>
+        <div v-if="isPhpSite" class="hc-ai-test">
+          <div class="hc-muted">测试使用当前填写的 AI 配置，无需先保存。会调用一次模型，不发送微信消息；成功后请保存配置。</div>
+          <el-alert v-if="aiResult" :type="aiResult.success ? 'success' : 'error'" :closable="false" show-icon :title="aiResult.success ? 'AI 测试成功' : 'AI 测试失败'">
+            <div>模型：{{ aiResult.model || '未填写' }} · 耗时：{{ aiResult.elapsedMs }} ms<span v-if="aiResult.httpStatus"> · HTTP {{ aiResult.httpStatus }}</span></div>
+            <div class="hc-ai-output">{{ aiResult.success ? aiResult.content : aiResult.errorMsg }}</div>
+          </el-alert>
+        </div>
       </el-card>
 
       <el-card class="hc-card" shadow="never">
@@ -87,8 +100,8 @@
       <el-card class="hc-card" shadow="never">
         <template #header>
           <div class="hc-card__header">
-            <span class="hc-section-title">推送内容模式</span>
-            <span class="hc-muted">固定模板模式下不调用大模型，文案由模板 + 真实数据直接拼出</span>
+            <span class="hc-section-title">全局默认推送内容</span>
+            <span class="hc-muted">用于跟随全局的任务；任务也可以设置独立内容</span>
           </div>
         </template>
         <el-form-item label="内容来源" prop="push_mode">
@@ -183,7 +196,7 @@
 import { onMounted, reactive, ref } from 'vue';
 import { ElMessage } from 'element-plus';
 
-import { apiGetConfig, apiTestPush, apiUpdateConfig } from '@/api';
+import { apiGetConfig, apiTestAi, apiTestPush, apiUpdateConfig } from '@/api';
 import SecretInput from '@/components/SecretInput.vue';
 import PushResultDialog from '@/components/PushResultDialog.vue';
 
@@ -248,6 +261,9 @@ const formRef = ref(null);
 const loading = ref(false);
 const saving = ref(false);
 const pushing = ref(false);
+const isPhpSite = Boolean(window.HEARTCRON_PHP);
+const testingAi = ref(false);
+const aiResult = ref(null);
 const dialogVisible = ref(false);
 const pushResult = ref(null);
 const options = reactive({ styleTypes: [], pushModes: [], templateSamples: [] });
@@ -353,6 +369,7 @@ async function handleSave() {
   try {
     const data = await apiUpdateConfig({ ...form });
     Object.assign(form, data.config);
+    for (const key of Object.keys(configured)) configured[key] = Boolean(data.config[`${key}_configured`]);
     ElMessage.success('配置已保存');
   } catch (err) {
     // 错误提示已统一处理
@@ -376,6 +393,21 @@ async function handleTestPush() {
   }
 }
 
+async function handleTestAi() {
+  testingAi.value = true;
+  aiResult.value = null;
+  const started = Date.now();
+  try {
+    aiResult.value = await apiTestAi(Object.fromEntries(
+      ['ai_api_url', 'ai_api_key', 'ai_model', 'ai_temperature', 'ai_max_tokens'].map(key => [key, form[key]])
+    ));
+  } catch (err) {
+    aiResult.value = { success: false, errorMsg: err.message || '测试请求失败，请检查网站与 PHP 错误日志', elapsedMs: Date.now() - started, model: form.ai_model };
+  } finally {
+    testingAi.value = false;
+  }
+}
+
 onMounted(loadConfig);
 </script>
 
@@ -383,6 +415,8 @@ onMounted(loadConfig);
 .hc-section-title {
   font-weight: 600;
 }
+.hc-ai-test { display: grid; gap: 12px; }
+.hc-ai-output { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 8px; }
 
 .hc-card__header {
   display: flex;

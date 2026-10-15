@@ -36,6 +36,8 @@ function hc_install_schema(PDO $db): void {
         'pay_day'=>'TINYINT UNSIGNED NOT NULL DEFAULT 0','love_message'=>'TEXT NULL',
         'qweather_host'=>"VARCHAR(255) NOT NULL DEFAULT ''"];
     foreach ($migrations as $name=>$type) if (!in_array($name,$columns,true)) $db->exec("ALTER TABLE system_config ADD COLUMN `$name` $type");
+    require_once __DIR__.'/migrations.php';
+    hc_migrate($db);
     $db->exec('CREATE TABLE IF NOT EXISTS hc_runtime (`name` VARCHAR(128) PRIMARY KEY, `value` TEXT NOT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4');
     $db->exec('CREATE TABLE IF NOT EXISTS hc_cron_run (task_id INT UNSIGNED NOT NULL, scheduled_minute DATETIME NOT NULL, PRIMARY KEY(task_id,scheduled_minute)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4');
     $defaults = require __DIR__ . '/defaults.php';

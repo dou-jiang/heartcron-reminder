@@ -54,6 +54,57 @@ function hc_view(string $resource,array $row): array {
     if ($resource==='anniversary') $row['days_left']=hc_days(date('Y-m-d'),$row['target_date']);
     return $row;
 }
+function hc_task_fields(array $body): array {
+    $limits=['task_name'=>128,'cron_expr'=>128,'push_time_period'=>32,'remark'=>255,'push_mode'=>16,
+        'push_title'=>255,'push_template'=>16000,'ai_prompt_template'=>16000,'style_type'=>32,'wx_pusher_uid'=>500];
+    $defaults=['task_name'=>'','cron_expr'=>'','push_time_period'=>'提醒','remark'=>'','push_mode'=>'inherit',
+        'push_title'=>'','push_template'=>'','ai_prompt_template'=>'','style_type'=>'','wx_pusher_uid'=>''];
+    $row=[];
+    foreach ($limits as $field=>$limit) {
+        $value=$body[$field] ?? $defaults[$field];
+        if (!is_scalar($value)) throw new InvalidArgumentException('任务字段格式不正确');
+        $value=trim((string)$value);
+        if (mb_strlen($value)>$limit) throw new InvalidArgumentException($field.' 内容过长');
+        $row[$field]=$value;
+    }
+    if (!$row['task_name'] || !$row['push_time_period']) throw new InvalidArgumentException('请输入任务名称与提醒场景');
+    $row['cron_expr']=implode(' ',hc_cron_parse($row['cron_expr'])['parts']);
+    if (!hc_cron_next($row['cron_expr'])) throw new InvalidArgumentException('此 cron 在未来八年没有执行时间，请检查日期');
+    if (!in_array($row['push_mode'],['inherit','template','ai'],true)) throw new InvalidArgumentException('任务内容模式不正确');
+    if ($row['push_mode']==='template' && !$row['push_template']) throw new InvalidArgumentException('请输入本任务的推送内容');
+    if ($row['push_mode']==='ai' && !$row['ai_prompt_template']) throw new InvalidArgumentException('请输入本任务的 AI 提示词');
+    if ($row['style_type'] && !in_array($row['style_type'],hc_options()['styleTypes'],true)) throw new InvalidArgumentException('文案风格不正确');
+    $row['enable']=isset($body['enable']) && (int)$body['enable']===0 ? 0 : 1;
+    return $row;
+}
+function hc_ai_test(array $body): array {
+    $start=microtime(true); $result=['success'=>false,'content'=>'','errorMsg'=>'','elapsedMs'=>0,'model'=>'','httpStatus'=>null];
+    try {
+        $cfg=hc_config();
+        foreach (['ai_api_url'=>500,'ai_api_key'=>255,'ai_model'=>128] as $field=>$limit) {
+            if (!array_key_exists($field,$body)) continue;
+            if (!is_string($body[$field])) throw new InvalidArgumentException('AI 配置格式不正确');
+            $value=trim($body[$field]);
+            if ($field==='ai_api_key' && strpos($value,'****')!==false) continue;
+            if (mb_strlen($value)>$limit || preg_match('/[\r\n]/',$value)) throw new InvalidArgumentException('AI 配置长度超限或包含换行');
+            $cfg[$field]=$value;
+        }
+        foreach (['ai_temperature'=>[0,1],'ai_max_tokens'=>[1,100000]] as $field=>$bounds) {
+            if (!isset($body[$field])) continue;
+            $n=$body[$field];
+            if (!is_numeric($n) || (float)$n<$bounds[0] || (float)$n>$bounds[1] || ($field==='ai_max_tokens' && floor((float)$n)!==(float)$n)) throw new InvalidArgumentException('AI 数值参数超出范围');
+            $cfg[$field]=$field==='ai_max_tokens' ? (int)$n : (float)$n;
+        }
+        $result['model']=$cfg['ai_model'];
+        $result['content']=hc_ai_generate($cfg,'请用中文回复一句简短的话，确认 AI 连接测试成功。');
+        $result['success']=true; $result['httpStatus']=200;
+    } catch (Throwable $e) {
+        $result['errorMsg']=$e instanceof PDOException ? '无法读取数据库配置' : $e->getMessage();
+        if ($e->getCode()>=400 && $e->getCode()<=599) $result['httpStatus']=$e->getCode();
+    }
+    $result['elapsedMs']=(int)round((microtime(true)-$start)*1000);
+    return $result;
+}
 function hc_crud(string $resource, ?int $id, string $method,array $body) {
     $table=['task'=>'remind_task','anniversary'=>'anniversary','todo'=>'todo_item'][$resource];
     if ($method==='GET' && !$id) {
@@ -71,12 +122,9 @@ function hc_crud(string $resource, ?int $id, string $method,array $body) {
         return $s;
     };
     if ($resource==='task') {
-        $name=$text('task_name',128); $expr=$text('cron_expr',128); $parsed=hc_cron_parse($expr);
-        $expr=implode(' ',$parsed['parts']);
-        if (!hc_cron_next($expr)) throw new InvalidArgumentException('此 cron 在未来八年没有执行时间，请检查日期');
-        $period=$body['push_time_period'] ?? '早安';
-        if (!in_array($period,hc_options()['pushTimePeriods'],true)) throw new InvalidArgumentException('推送时段不正确');
-        $row=['task_name'=>$name,'cron_expr'=>$expr,'push_time_period'=>$period,'enable'=>$enable,'remark'=>$text('remark',255,false)];
+        $existing=$id ? hc_row('SELECT * FROM remind_task WHERE id=?',[$id]) : [];
+        $row=hc_task_fields(array_merge($existing,$body));
+        if (!$id || $row['cron_expr']!==$existing['cron_expr'] || $row['enable']!==(int)$existing['enable']) $row['schedule_updated_at']=date('Y-m-d H:i:s');
     } elseif ($resource==='anniversary') {
         $name=$text('name',128); $date=$text('target_date',10);
         if (!hc_date_valid($date)) throw new InvalidArgumentException('日期必须是有效的 YYYY-MM-DD');
@@ -137,7 +185,14 @@ function hc_api() {
         if ($id) { $task=hc_row('SELECT * FROM remind_task WHERE id=?',[$id]); if (!$task) hc_fail('任务不存在',404); $period=$period ?: $task['push_time_period']; }
         hc_ok(hc_push($id,$period,(string)($body['style_type'] ?? ''),'manual'));
     }
-    if ($path==='meta' && $method==='GET') hc_ok(array_merge(hc_options(),['appName'=>'HeartCron 心时','version'=>'2.0.0','runtime'=>'php','timezone'=>'Asia/Shanghai','scheduler'=>hc_scheduler_info(),'now'=>date(DATE_ATOM)]));
+    if ($path==='task-preview' && $method==='POST') {
+        $task=hc_task_fields($body);
+        hc_ok(hc_message(hc_task_config(hc_config(),$task),$task['push_time_period'],$task['style_type']));
+    }
+    if ($path==='test-ai' && $method==='POST') hc_ok(hc_ai_test($body));
+    if ($path==='scheduler' && $method==='GET') hc_ok(hc_scheduler_info());
+    if ($path==='scheduler/check' && $method==='POST') hc_ok(hc_scheduler_tick('manual'));
+    if ($path==='meta' && $method==='GET') hc_ok(array_merge(hc_options(),['appName'=>'HeartCron 心时','version'=>'2.1.0','runtime'=>'php','timezone'=>'Asia/Shanghai','scheduler'=>hc_scheduler_info(),'now'=>date(DATE_ATOM)]));
     if ($path==='preview' && $method==='GET') {
         $collected=hc_collect(); $cfg=$collected['cfg']; $data=$collected['data']; $defaults=require __DIR__.'/defaults.php';
         $stats=[];
