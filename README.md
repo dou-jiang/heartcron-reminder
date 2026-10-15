@@ -10,7 +10,9 @@ HeartCron（心时）是一个暖心定时提醒 Web 系统，基于开源项目
 > 还没有女朋友？那就更该先把它跑起来——把「早安、天气、多喝热水、别忘了吃饭」这套关心链路先搭好，
 > 等那个人出现的时候，你就是准备最充分的那一个。祝你一臂之力，早日脱单 ❤
 
-项目地址：https://github.com/__GITHUB_USER__/heartcron-reminder
+[![GitHub](https://img.shields.io/badge/GitHub-dou--jiang%2Fheartcron--reminder-181717?logo=github)](https://github.com/dou-jiang/heartcron-reminder)
+
+项目地址：https://github.com/dou-jiang/heartcron-reminder
 
 ## 功能特性
 
@@ -230,7 +232,7 @@ heartcron-reminder/
 ### 1. 安装依赖
 
 ```bash
-git clone https://github.com/你的用户名/heartcron-reminder.git
+git clone https://github.com/dou-jiang/heartcron-reminder.git
 cd heartcron-reminder
 npm install
 ```
